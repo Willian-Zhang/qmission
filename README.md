@@ -31,6 +31,10 @@ The [example stack](examples/compose.yaml) runs qBittorrent and qmission togethe
 services:
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
+    environment:
+      PUID: 1000          # owner of the downloaded files: your user's `id -u`
+      PGID: 1000          # and `id -g`
+      TZ: Etc/UTC         # your time zone, e.g. Europe/Berlin
     ports:
       - "8080:8080"       # qBittorrent WebUI
       - "6881:6881"       # BitTorrent
@@ -52,6 +56,12 @@ services:
       QMISSION_PASS: ${QMISSION_PASS}
     ports:
       - "9091:9091"       # Transmission RPC: http://<host>:9091/transmission/rpc
+    # Optional: mark the container unhealthy while qmission can't log in to qBittorrent.
+    # healthcheck:
+    #   test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9091/healthz"]
+    #   interval: 60s
+    #   timeout: 10s
+    #   retries: 3
     restart: unless-stopped
 ```
 
@@ -104,10 +114,25 @@ Requires Go 1.23+.
 
 ```sh
 go install github.com/Willian-Zhang/qmission/cmd/qmission@latest
-QBT_USER=admin QBT_PASS=... QMISSION_USER=me QMISSION_PASS=... qmission -r http://localhost:8080/
 ```
 
-For a systemd service, copy the binary to `/usr/local/bin/qmission` and install [qmission.service](qmission.service).
+Put the four logins in a file (e.g. `qmission.env`, `chmod 600`), so the passwords don't end up in your shell history:
+
+```sh
+QBT_USER=admin
+QBT_PASS=...
+QMISSION_USER=me
+QMISSION_PASS=...
+```
+
+Then run:
+
+```sh
+set -a; . ./qmission.env; set +a
+qmission -r http://localhost:8080/
+```
+
+For a systemd service, see the install steps at the top of [qmission.service](qmission.service).
 
 ## Options
 

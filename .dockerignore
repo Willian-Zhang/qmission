@@ -1,7 +1,7 @@
 # Only go.mod, go.sum and the Go packages are needed to build the image.
 .git
 .github
-.circleci
+
 .idea
 scrachpad
 data
@@ -12,6 +12,7 @@ data
 .env.*
 Dockerfile
 .dockerignore
-compose.yaml
+examples
+docs
 qmission.service
 qmission

@@ -1,6 +1,20 @@
+# Install: copy the binary to /usr/local/bin/qmission, this file to
+# /etc/systemd/system/, and create /etc/qmission.env (chmod 600) with:
+#   QBT_USER=...
+#   QBT_PASS=...
+#   QMISSION_USER=...
+#   QMISSION_PASS=...
+# Then: systemctl enable --now qmission
+[Unit]
+Description=qmission (Transmission RPC bridge for qBittorrent)
+After=network-online.target
+Wants=network-online.target
+
 [Service]
-User=root
-ExecStart=/usr/local/bin/qmission
+EnvironmentFile=/etc/qmission.env
+ExecStart=/usr/local/bin/qmission -r http://localhost:8080/ -p 9091
+DynamicUser=yes
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
