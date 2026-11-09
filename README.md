@@ -1,107 +1,123 @@
 # qmission
 
-qmission (qBittorrent + Transmission) allows to use Transmission remote controls with qBittorrent.
-It acts as a bridge between Transmission RPC and qBittorrent WebUI API.
+Use **Transmission apps with qBittorrent**.
+
+qmission is a small bridge: it speaks the Transmission RPC protocol to your app (e.g. [TrguiNG](https://github.com/openscopeproject/TrguiNG)) and translates every request to qBittorrent's WebUI API.
+
+```
+TrguiNG / other Transmission app  ──Transmission RPC──▶  qmission  ──WebUI API──▶  qBittorrent
+```
 
 qmission is a fork of [Reflection](https://github.com/h31/Reflection) by Artyom Aleksyuk (MIT).
 
-Currently qmission is able to:
-* Show torrent list
-* Show torrent details (files, trackers, statistics)
-* Start, stop, verify, reannounce and remove torrents
-* Add new torrents from a .torrent file, a magnet link (hex or base32) or an HTTP/HTTPS link, with labels, sequential download and unwanted files
-* Choose which files should be downloaded
-* Change destination directory
-* Show peer table
+## What works
 
-## Installation
+- Torrent list, filters, details (files, peers, trackers, pieces), statistics
+- Add torrents (magnet, .torrent file, URL) with folder, labels, sequential download and file selection
+- Start, stop, force start, verify, reannounce, remove, queue, move, rename
+- Edit torrent properties (speed and seeding limits, labels, trackers, file priorities)
+- Server settings (speed limits, alternative speed and its schedule, queue, network)
+
+Some Transmission options have no equivalent in qBittorrent. Changing one gives a clear error and changes nothing. Per-app details: [docs/compatibility](docs/compatibility/README.md).
+
+Requirements: qBittorrent **4.1 or newer** (tested on 4.6 and 5.3) with its WebUI turned on.
+
+## Quick start (Docker)
+
+The [example stack](examples/compose.yaml) runs qBittorrent and qmission together.
+
+1. Get the code and create the settings file:
+
+   ```sh
+   git clone https://github.com/Willian-Zhang/qmission.git
+   cd qmission/examples
+   cp ../.env.example .env
+   ```
+
+2. Start qBittorrent first and set its WebUI password:
+
+   ```sh
+   docker compose up -d qbittorrent
+   docker logs qbittorrent   # shows a temporary password for user "admin"
+   ```
+
+   Open `http://<host>:8080`, log in, and set a permanent password under *Tools → Options → WebUI*.
+
+3. Fill in `.env`:
+
+   | Variable | Meaning |
+   |---|---|
+   | `QBT_USER`, `QBT_PASS` | the qBittorrent WebUI login from step 2 |
+   | `QMISSION_USER`, `QMISSION_PASS` | a new login your Transmission app will use for qmission (required) |
+
+4. Start qmission:
+
+   ```sh
+   docker compose up -d
+   ```
+
+5. In your Transmission app, add a server:
+
+   | Setting | Value |
+   |---|---|
+   | Host | your Docker host |
+   | Port | `9091` |
+   | Path | `/transmission/rpc` |
+   | Username / password | `QMISSION_USER` / `QMISSION_PASS` |
+
+Already running qBittorrent? Use only the `qmission` service from the example and point `-r` at your qBittorrent WebUI.
+
+## Without Docker
 
 Requires Go 1.23+.
 
-```
+```sh
 go install github.com/Willian-Zhang/qmission/cmd/qmission@latest
+QBT_USER=admin QBT_PASS=... QMISSION_USER=me QMISSION_PASS=... qmission -r http://localhost:8080/
 ```
 
-On Linux, to run it as a systemd service, copy the binary to `/usr/local/bin/qmission` and install [qmission.service](qmission.service):
+For a systemd service, copy the binary to `/usr/local/bin/qmission` and install [qmission.service](qmission.service).
 
-```
-sudo cp qmission.service /etc/systemd/system/
-sudo systemctl enable --now qmission.service
-```
+## Options
 
-## Docker
+| Option | Default | Meaning |
+|---|---|---|
+| `-r`, `-api-addr` | `http://localhost:8080/` | qBittorrent WebUI address |
+| `-p`, `-port` | `9091` | port qmission listens on |
+| `-v` | off | log one line per request |
+| `-d` | off | debug log, **includes torrent names, paths and hashes**; don't share it |
+| `-sync` | `true` | use qBittorrent's incremental updates (faster) |
+| `-disable-keep-alive` | off | for old qBittorrent versions with connection problems |
+| `QBT_USER`, `QBT_PASS` | | qBittorrent login (env; `-qbt-user`/`-qbt-pass` also work but show up in `ps`) |
+| `QMISSION_USER`, `QMISSION_PASS` | | login for Transmission apps (env, required) |
 
-The [Dockerfile](Dockerfile) builds a small Alpine image (non-root, binary at `/usr/local/bin/qmission`, port 9091) for `linux/amd64` and `linux/arm64`:
+`GET /healthz` (no login) returns `200 ok` while qmission can reach and log in to qBittorrent, `503` otherwise.
 
-```
-docker buildx build --platform linux/amd64,linux/arm64 -t qmission .
-```
+## Troubleshooting
 
-[compose.yaml](compose.yaml) runs it from a checkout (`build: .`, image `qmission:local`). Copy [.env.example](.env.example) to `.env` and fill in:
+- **qmission can't log in to qBittorrent (401):** qBittorrent checks the `Host` header. Use the address and port qBittorrent itself listens on: in Docker that's the service name and the *container* port (`http://qbittorrent:8080/`), not a remapped host port. Behind a reverse proxy, add its hostname under *Options → WebUI → Server domains*, or turn off Host header validation.
+- **"banned" errors:** qBittorrent blocks an IP for an hour after 5 failed logins. Fix `QBT_USER`/`QBT_PASS`, then restart qBittorrent or wait.
+- **qmission refuses to start:** set `QMISSION_USER` and `QMISSION_PASS`.
+- **A setting fails with "qBittorrent can't store these fields":** that option doesn't exist in qBittorrent. Leave it unchanged; see [docs/compatibility](docs/compatibility/README.md).
 
-* `QBT_USER`, `QBT_PASS`: the qBittorrent WebUI login.
-* `QMISSION_USER`, `QMISSION_PASS`: the Basic-auth credentials clients use for the bridge (required).
+## Good to know
 
-Edit the `-r` qBittorrent URL, the network and the IP address to match your setup. The healthcheck polls `/healthz`, which returns 200 while the qBittorrent login works.
+- Labels are qBittorrent **tags**.
+- Speeds are in KiB/s.
+- Torrent IDs are renumbered when qmission restarts (Transmission does the same).
+- Free space always refers to qBittorrent's default download folder.
+- Moving a torrent always moves its data.
+- Classic Transmission RPC only (rpc-version 18, reported as `4.1.0 (qmission, qBT <version>)`); Transmission's newer JSON-RPC 2.0 isn't supported yet.
 
-## CI
+## Development
 
-[GitHub Actions](.github/workflows/ci.yml) builds, vets and tests (`go test -race`) on every push to `master` and every pull request, and builds the multi-arch image without pushing it.
-
-## Configuration
-
-* `QBT_USER`, `QBT_PASS` (env): the qBittorrent WebUI login. `-qbt-user`/`-qbt-pass` override them, but flags show up in the process list, so prefer the env vars.
-* `QMISSION_USER`, `QMISSION_PASS` (env, required): the Basic-auth credentials clients must send. qmission refuses to start without them; pass-through of client credentials to qBittorrent isn't implemented yet. Client credentials are never forwarded to qBittorrent.
-* qmission logs in to qBittorrent at startup and keeps retrying in the background while qBittorrent is unreachable; a qBittorrent restart is picked up by logging in again.
-* `/healthz` (no auth) answers `200 ok` while the qBittorrent login and an API call work, `503` otherwise.
-* `-d` logs full RPC bodies, which contain torrent names, paths and hashes. Don't share such logs.
-
-## Compatibility
-* qmission speaks the classic Transmission RPC protocol (the `X-Transmission-Session-Id` handshake, camelCase/kebab-case names) and reports `rpc-version` 18, i.e. Transmission 4.1.0 (`version` is e.g. `4.1.0 (qmission, qBT 5.3.0)`). JSON-RPC 2.0 isn't supported yet.
-* Requires at least qBittorrent 4.1.0. Tested on 4.6.x and 5.3.x; the qBittorrent version is detected at login, so 4.x (`pause`/`resume`) and 5.x (`stop`/`start`) both work.
-
-Stage 1a caveats (read-only use plus list polling):
-* Methods and writes that aren't implemented yet (`session-set`, `torrent-set` except `files-wanted`/`files-unwanted`, `torrent-start-now`, `torrent-rename-path`, `queue-*`, `port-test`, `blocklist-update`, `group-*`) fail with `not implemented in qmission yet` instead of pretending to succeed.
-* Torrent IDs start at 1 and are stable only while qmission runs; they're reassigned after a restart.
-* Speeds and limits are in KiB/s (`units.speed-bytes` 1024). qBittorrent's `0` (unlimited) shows as a disabled limit.
-* List polls are served from qBittorrent's torrent list without per-torrent requests. `trackerStats` there holds one entry for qBittorrent's current tracker (with the swarm's seed/peer counts); the real tracker list comes with a single-torrent request (the details pane). `pieceCount`, `pieceSize`, `dateCreated`, `isPrivate` and `file-count` are read once per torrent and cached; `pieceCount` is 0 while qBittorrent is still fetching a magnet's metadata. Fields that need `torrents/properties` (`corruptEver`, `peer-limit`, `comment`, ...) are only filled for single-torrent requests.
-* `queuePosition`: queued torrents first in qBittorrent's queue order, then the torrents outside qBittorrent's queue (e.g. seeding) by ID.
-* `download-dir-free-space` is the free space of qBittorrent's default save path.
-* A torrent in qBittorrent's `error`/`missingFiles` state shows as stopped with a local error; qBittorrent's API gives no error text.
-* Tested against Transmission Remote GUI, built-in Transmission Web UI, Torrnado client for Android, Transmission-Qt and Transmission Remote by Yury Polek. Please fill an issue if you experience an incompatibility with any client.
-
-Stage 1b caveats (adding torrents and actions):
-* `torrent-add` waits up to 10 s for the new torrent to show up in qBittorrent, then answers `torrent-added` with its ID; if it doesn't show up in time, the request fails (the torrent may still appear later). A torrent qBittorrent already has is answered with `torrent-duplicate`, without adding it again.
-* `torrent-add` with an HTTP/HTTPS `filename`: qBittorrent downloads the file, so qmission doesn't know the hash in advance. It adds a temporary `qmission-add-<random>` tag, finds the torrent by it, then removes and deletes the tag (leftovers are deleted at startup; they never show in `labels`, and labels starting with `qmission-add-` are refused). A URL that turns out to be a duplicate, or fails to download, ends in the timeout error. qBittorrent 5.x ignores `cookies`. A `filename` that is a local path isn't supported; send the file as `metainfo`.
-* `labels` become qBittorrent tags (created if missing); a label can't contain a comma.
-* `files-unwanted` only works with `metainfo` (a magnet link or URL has no file list yet), and fails the request otherwise. Such torrents are added stopped and started once the files are deselected, so nothing of them is downloaded. `files-wanted`, `priority-*`, `peer-limit` and `bandwidthPriority` are ignored on add.
-* Path flags (`+s`/`+f`/`+h` at the end of a path) have been removed; paths are used as given. Sequential download is the `sequential_download` option, which also turns on first/last-piece priority (like Transmission's sequential mode). Skip-hash-check isn't reachable from Transmission clients.
-* `free-space` and `download-dir-free-space` always report the free space of qBittorrent's default save path, whatever path is asked (`total_size` is -1, unknown). With `-sync=false`, `free-space` reports -1.
-* `torrent-remove` with `delete-local-data` deletes the files (qBittorrent `deleteFiles`). `torrent-reannounce` asks the trackers again (qBittorrent 5.x also DHT).
-
-What features are not supported yet:
-* Setting torrent properties (download/upload speed, etc)
-* Showing and changing torrent client settings
-
-## qBittorrent and Transmission-specific options
-
-Please note that both qBittorrent and Transmission have some unique features.
-For example, some torrent properties such as a private flag are not exposed by qBittorrent.
-In case Transmission clients request such information, qmission responds with predefined template data. Template values are stored in [transmission/templates.go](transmission/templates.go).
-
-
-qmission applies some optimizations to make things smoother:
-* Both qBittorent and Transmission have an ability to transmit not the whole torrents list but just the recently changed information.
-They do it in a slightly different way, but qmission tries to compensate differences.
-Use `-sync=false` command line flag to disable this optimization and make qmission request the whole torrents list each time.
-* Due to the way the qBittorrent's API was designed, some requests can be quite slow.
-qmission answers list polls from the sync data alone and caches the per-torrent values that never change (piece count and size), so polling stays cheap. `-cache-timeout` is kept for compatibility and has no effect.
-
-## Usage:
-
-```bash
-go run ./cmd/qmission    # from a checkout
+```sh
+go build ./cmd/qmission
 go test ./...
 ```
 
-Use a `--help` flag to show settings. Default qBittorrent address is `http://localhost:8080/`.
+The tests replay recorded, anonymized qBittorrent 4.6 and 5.3 responses ([cmd/qmission/testdata](cmd/qmission/testdata/README.md)). CI ([GitHub Actions](.github/workflows/ci.yml)) builds, vets, tests and builds the multi-arch Docker image.
+
+## License
+
+MIT, see [LICENSE.txt](LICENSE.txt).
