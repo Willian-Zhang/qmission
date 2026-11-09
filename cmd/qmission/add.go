@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base32"
 	"encoding/base64"
@@ -188,13 +189,25 @@ func TorrentAdd(args json.RawMessage) (JsonMap, error) {
 	if err != nil {
 		return nil, err
 	}
+	// TrguiNG always sends bandwidthPriority (Add dialog Low/Normal/High). qBittorrent
+	// has no torrent bandwidth priority, so only Normal (0) is accepted; anything
+	// else fails like an unmappable torrent-set field instead of being lost.
+	if bp := bytes.TrimSpace(req.BandwidthPriority); len(bp) > 0 && string(bp) != "null" {
+		var v float64
+		if err := json.Unmarshal(bp, &v); err != nil {
+			return nil, fmt.Errorf("torrent-add: invalid bandwidthPriority: %w", err)
+		}
+		if v != 0 {
+			log.WithField("field", "bandwidthPriority").Warn("torrent-add: field qBittorrent can't store, nothing added")
+			return nil, fmt.Errorf("torrent-add: %w (qBittorrent has no torrent priority; use Normal)", unmappableError([]string{"bandwidthPriority"}))
+		}
+	}
 	for name, set := range map[string]bool{
-		"peer-limit":        len(req.PeerLimit) > 0,
-		"bandwidthPriority": len(req.BandwidthPriority) > 0,
-		"files-wanted":      len(req.FilesWanted) > 0,
-		"priority-high":     len(req.PriorityHigh) > 0,
-		"priority-low":      len(req.PriorityLow) > 0,
-		"priority-normal":   len(req.PriorityNormal) > 0,
+		"peer-limit":      len(req.PeerLimit) > 0,
+		"files-wanted":    len(req.FilesWanted) > 0,
+		"priority-high":   len(req.PriorityHigh) > 0,
+		"priority-low":    len(req.PriorityLow) > 0,
+		"priority-normal": len(req.PriorityNormal) > 0,
 	} {
 		if set {
 			log.WithField("field", name).Debug("torrent-add: ignoring field qBittorrent can't take on add")

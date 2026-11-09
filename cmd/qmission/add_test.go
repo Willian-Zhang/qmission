@@ -576,6 +576,8 @@ func TestTorrentAddInvalid(t *testing.T) {
 			"files-unwanted, magnet": {"filename": "magnet:?xt=urn:btih:" + hash, "files-unwanted": []int{0}},
 			"files-unwanted, URL":    {"filename": "https://x.invalid/a.torrent", "files-unwanted": []int{0}},
 			"paused string":          {"filename": "magnet:?xt=urn:btih:" + hash, "paused": "yes"},
+			"priority high":          {"filename": "magnet:?xt=urn:btih:" + hash, "bandwidthPriority": 1},
+			"priority low":           {"filename": "magnet:?xt=urn:btih:" + hash, "bandwidthPriority": -1},
 		} {
 			if out := c.call("torrent-add", args); out["result"] == "success" {
 				t.Errorf("%s: expected an error", name)
