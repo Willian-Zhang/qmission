@@ -1,0 +1,73 @@
+[
+ {
+  "msg": "This torrent is private",
+  "num_downloaded": 0,
+  "num_leeches": 0,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 0,
+  "tier": -1,
+  "url": "** [DHT] **"
+ },
+ {
+  "msg": "This torrent is private",
+  "num_downloaded": 0,
+  "num_leeches": 0,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 0,
+  "tier": -1,
+  "url": "** [PeX] **"
+ },
+ {
+  "msg": "This torrent is private",
+  "num_downloaded": 0,
+  "num_leeches": 0,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 0,
+  "tier": -1,
+  "url": "** [LSD] **"
+ },
+ {
+  "endpoints": [
+   {
+    "bt_version": 1,
+    "min_announce": 1794246633,
+    "msg": "",
+    "name": "10.99.0.2:6881",
+    "next_announce": 1794248174,
+    "num_downloaded": -1,
+    "num_leeches": 7,
+    "num_peers": 0,
+    "num_seeds": 23,
+    "status": 2,
+    "updating": false
+   },
+   {
+    "bt_version": 1,
+    "min_announce": 1794246333,
+    "msg": "skipping tracker announce (unreachable)",
+    "name": "10.99.0.3:6881",
+    "next_announce": 1794246333,
+    "num_downloaded": -1,
+    "num_leeches": -1,
+    "num_peers": -1,
+    "num_seeds": -1,
+    "status": 6,
+    "updating": false
+   }
+  ],
+  "min_announce": 1794246633,
+  "msg": "",
+  "next_announce": 1794248174,
+  "num_downloaded": -1,
+  "num_leeches": 7,
+  "num_peers": 0,
+  "num_seeds": 23,
+  "status": 2,
+  "tier": 0,
+  "updating": false,
+  "url": "https://tracker2.example/announce"
+ }
+]

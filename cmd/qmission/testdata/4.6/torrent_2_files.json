@@ -1,0 +1,15 @@
+[
+ {
+  "availability": 1,
+  "index": 0,
+  "is_seed": false,
+  "name": "Torrent 2.iso",
+  "piece_range": [
+   0,
+   3023
+  ],
+  "priority": 1,
+  "progress": 0.0710978835978836,
+  "size": 792723456
+ }
+]

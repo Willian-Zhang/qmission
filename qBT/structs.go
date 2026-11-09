@@ -2,11 +2,94 @@ package qBT
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
 )
 
 // https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-Documentation
 
 type JsonMap map[string]interface{}
+
+// ProxyType is app/preferences `proxy_type`. qBT >= 4.6 sends the enum name as a
+// string ("None", "HTTP", "SOCKS5", "SOCKS4"), older versions an int.
+// Based on Xmister/Reflection 5dc9aae, with the values corrected to qBT's enum
+// (Net::ProxyType: SOCKS4 = 5, not 3).
+type ProxyType int
+
+const (
+	ProxyTypeUnknown ProxyType = -1 // a string this version doesn't know
+	ProxyTypeNone    ProxyType = 0
+	ProxyTypeHTTP    ProxyType = 1
+	ProxyTypeSOCKS5  ProxyType = 2
+	ProxyTypeSOCKS4  ProxyType = 5
+)
+
+func (pt ProxyType) String() string {
+	switch pt {
+	case ProxyTypeNone:
+		return "None"
+	case ProxyTypeHTTP:
+		return "HTTP"
+	case ProxyTypeSOCKS5:
+		return "SOCKS5"
+	case ProxyTypeSOCKS4:
+		return "SOCKS4"
+	default:
+		return fmt.Sprintf("Unknown(%d)", int(pt))
+	}
+}
+
+// proxyTypeFromInt maps the pre-4.6 integer form. Before 4.6 the enum also had
+// HTTP_PW = 3 and SOCKS5_PW = 4 (4.6 dropped them and kept SOCKS4 = 5); old
+// docs list -1 for "disabled". These two are from the API docs, not checked in source.
+func proxyTypeFromInt(v int) ProxyType {
+	switch v {
+	case -1, 0:
+		return ProxyTypeNone
+	case 1, 3:
+		return ProxyTypeHTTP
+	case 2, 4:
+		return ProxyTypeSOCKS5
+	case 5:
+		return ProxyTypeSOCKS4
+	default:
+		return ProxyTypeUnknown
+	}
+}
+
+// UnmarshalJSON accepts the int and the string form. An unknown value becomes
+// ProxyTypeUnknown instead of failing the whole preferences decode.
+func (pt *ProxyType) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		return nil
+	}
+	var num float64
+	if err := json.Unmarshal(data, &num); err == nil {
+		*pt = proxyTypeFromInt(int(num))
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return fmt.Errorf("proxy_type: cannot decode %s", string(data))
+	}
+	if n, err := strconv.Atoi(str); err == nil {
+		*pt = proxyTypeFromInt(n)
+		return nil
+	}
+	switch str {
+	case "None":
+		*pt = ProxyTypeNone
+	case "HTTP":
+		*pt = ProxyTypeHTTP
+	case "SOCKS5":
+		*pt = ProxyTypeSOCKS5
+	case "SOCKS4":
+		*pt = ProxyTypeSOCKS4
+	default:
+		*pt = ProxyTypeUnknown
+	}
+	return nil
+}
 
 type TorrentInfo struct {
 	Id             ID      //   Transmission's ID
@@ -33,6 +116,24 @@ type TorrentInfo struct {
 	Save_path      string  //	Torrent save path
 	Added_on       int64
 	Completion_on  int64 //   Torrent completion time
+
+	// Used by the torrent-get list mapping (all in torrents/info and sync/maindata).
+	Amount_left    int64   //	Bytes left to download (wanted files)
+	Completed      int64   //	Bytes completed (wanted files)
+	Downloaded     int64   //	All-time downloaded bytes
+	Uploaded       int64   //	All-time uploaded bytes
+	Dl_limit       int64   //	Per-torrent download limit (B/s), 0 or -1 = none
+	Up_limit       int64   //	Per-torrent upload limit (B/s), 0 or -1 = none
+	Ratio_limit    float64 //	-2 global, -1 unlimited, else the ratio
+	Last_activity  int64   //	Last time a chunk was transferred
+	Time_active    int64   //	Total active time (seconds)
+	Seeding_time   int64   //	Seeding time (seconds), qBT >= 4.2
+	Availability   float64 //	Distributed copies, -1 when not downloading
+	Tags           string  //	Comma-separated tags (", " in 4.6 and 5.3)
+	Tracker        string  //	First working tracker, "" if none
+	Trackers_count int     //	Number of trackers (WebAPI >= 2.8)
+	Magnet_uri     string
+	Private        bool //	5.x only, null without metadata
 }
 
 type PeerInfo struct {
@@ -82,6 +183,7 @@ type PropertiesGeneral struct {
 	Total_size               int64   //	Torrent total size (bytes)
 	Up_speed_avg             int     //	Torrent average upload speed (bytes/second)
 	Up_speed                 int     //	Torrent upload speed (bytes/second)
+	Is_private               bool    //	qBT >= 4.6 (WebAPI 2.8.?)
 }
 
 type PropertiesTrackers struct {
@@ -89,6 +191,11 @@ type PropertiesTrackers struct {
 	Status    int    //	Tracker status. See the table below for possible values
 	Num_peers int    //	Number of peers for current torrent reported by the tracker
 	Msg       string // Tracker message (there is no way of knowing what this message is - it's up to tracker admins)
+	// Tier is a number, or "" for the DHT/PeX/LSD pseudo-entries in old qBT (4.1); -1 in 4.6+.
+	Tier           interface{}
+	Num_seeds      int // -1 = unknown
+	Num_leeches    int
+	Num_downloaded int
 }
 
 type PropertiesFiles struct {
@@ -110,6 +217,20 @@ type TransferInfo struct {
 	Connection_status string //	Connection status. See possible values here below
 }
 
+// ServerState is sync/maindata `server_state`: transfer/info plus the sync-only keys.
+// Deltas only carry changed keys; TorrentsList merges them.
+type ServerState struct {
+	TransferInfo
+	Alltime_dl             int64 //	All-time download (bytes)
+	Alltime_ul             int64 //	All-time upload (bytes)
+	Free_space_on_disk     int64 //	Free space of the default save path (bytes)
+	Total_wasted_session   int64
+	Total_peer_connections int
+	Queueing               bool
+	Use_alt_speed_limits   bool
+	Refresh_interval       int
+}
+
 type MainData struct {
 	Rid                int
 	Full_update        bool
@@ -117,8 +238,7 @@ type MainData struct {
 	Torrents_removed   []Hash
 	Categories         *json.RawMessage
 	Categories_removed *json.RawMessage
-	Queueing           bool
-	Server_state       *TransferInfo
+	Server_state       *json.RawMessage
 }
 
 type Preferences struct {
@@ -176,7 +296,7 @@ type Preferences struct {
 	Lsd                            bool        //	True if LSD is eanbled
 	Encryption                     int         //	See list of possible values here below
 	Anonymous_mode                 bool        //	If true anonymous mode will be enabled; read more here; this option is only available in qBittorent built against libtorrent version 0.16.X and higher
-	Proxy_type                     int         //	See list of possible values here below
+	Proxy_type                     ProxyType   //	int before qBT 4.6, string since
 	Proxy_ip                       string      //	Proxy Address address or domain name
 	Proxy_port                     int         //	Proxy port
 	Proxy_peer_connections         bool        //	True if peer and web seed connections should be proxified; this option will have any effect only in qBittorent built against libtorrent version 0.16.X and higher
@@ -200,4 +320,22 @@ type Preferences struct {
 	Dyndns_username                string      //	Username for DDNS service
 	Dyndns_password                string      //	Password for DDNS service
 	Dyndns_domain                  string      //	Your DDNS domain name
+
+	Bittorrent_protocol               int //	0 TCP+uTP, 1 TCP, 2 uTP (qBT >= 4.2)
+	Disk_cache                        int //	MiB, -1 = auto
+	Auto_delete_mode                  int //	0 never delete .torrent files
+	Slow_torrent_inactive_timer       int //	seconds
+	Max_inactive_seeding_time         int //	minutes, -1 = off (qBT >= 4.6)
+	Max_inactive_seeding_time_enabled bool
+	Add_trackers_enabled              bool
+	Add_trackers                      string //	newline-separated
+	Autorun_on_torrent_added_enabled  bool   //	qBT >= 4.6
+	Autorun_on_torrent_added_program  string
+	Add_stopped_enabled               bool //	WebAPI >= 2.11 (qBT 5.x): add torrents stopped
+	Start_paused_enabled              bool //	WebAPI < 2.11 (qBT 4.x): add torrents paused
+}
+
+// AddStopped is "add torrents stopped/paused", whichever key this qBT version sends.
+func (p Preferences) AddStopped() bool {
+	return p.Add_stopped_enabled || p.Start_paused_enabled
 }

@@ -6,13 +6,14 @@ import (
 
 type RPCRequest struct {
 	Method    string
-	Tag       *int
+	Tag       json.RawMessage // echoed back as-is (a number in the spec)
 	Arguments json.RawMessage
 }
 
 type GetRequest struct {
 	Ids    *json.RawMessage
 	Fields []string
+	Format string // "objects" (default) or "table"
 }
 
 type TorrentAddRequest struct {
@@ -31,12 +32,12 @@ type TorrentAddRequest struct {
 }
 
 type PeerInfo struct {
-	RateToPeer   int			`json:"rateToPeer"`
-	RateToClient int			`json:"rateToClient"`
-	Port         int			`json:"port"`
-	ClientName   interface{}	`json:"clientName"`
-	FlagStr      string			`json:"flagStr"`
-	Country      interface{}	`json:"country"`
-	Address      string			`json:"address"`
-	Progress     float64 		`json:"progress"`		//	Torrent progress (percentage/100)
+	RateToPeer   int         `json:"rateToPeer"`
+	RateToClient int         `json:"rateToClient"`
+	Port         int         `json:"port"`
+	ClientName   interface{} `json:"clientName"`
+	FlagStr      string      `json:"flagStr"`
+	Country      interface{} `json:"country"`
+	Address      string      `json:"address"`
+	Progress     float64     `json:"progress"` //	Torrent progress (percentage/100)
 }

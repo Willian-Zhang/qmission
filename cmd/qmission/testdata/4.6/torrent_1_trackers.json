@@ -1,0 +1,112 @@
+[
+ {
+  "msg": "",
+  "num_downloaded": 0,
+  "num_leeches": 1,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 2,
+  "tier": -1,
+  "url": "** [DHT] **"
+ },
+ {
+  "msg": "",
+  "num_downloaded": 0,
+  "num_leeches": 1,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 2,
+  "tier": -1,
+  "url": "** [PeX] **"
+ },
+ {
+  "msg": "",
+  "num_downloaded": 0,
+  "num_leeches": 0,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 2,
+  "tier": -1,
+  "url": "** [LSD] **"
+ },
+ {
+  "msg": "",
+  "num_downloaded": -1,
+  "num_leeches": 6,
+  "num_peers": 20,
+  "num_seeds": 15,
+  "status": 2,
+  "tier": 0,
+  "url": "udp://tracker1.example/announce"
+ },
+ {
+  "msg": "skipping tracker announce (unreachable)",
+  "num_downloaded": -1,
+  "num_leeches": -1,
+  "num_peers": -1,
+  "num_seeds": -1,
+  "status": 3,
+  "tier": 1,
+  "url": "udp://tracker2.example/announce"
+ },
+ {
+  "msg": "",
+  "num_downloaded": -1,
+  "num_leeches": 71,
+  "num_peers": 200,
+  "num_seeds": 226,
+  "status": 2,
+  "tier": 2,
+  "url": "udp://tracker3.example/announce"
+ },
+ {
+  "msg": "skipping tracker announce (unreachable)",
+  "num_downloaded": -1,
+  "num_leeches": -1,
+  "num_peers": -1,
+  "num_seeds": -1,
+  "status": 3,
+  "tier": 3,
+  "url": "udp://tracker4.example/announce"
+ },
+ {
+  "msg": "skipping tracker announce (unreachable)",
+  "num_downloaded": -1,
+  "num_leeches": -1,
+  "num_peers": -1,
+  "num_seeds": -1,
+  "status": 3,
+  "tier": 4,
+  "url": "udp://tracker5.example/announce"
+ },
+ {
+  "msg": "unsupported URL protocol",
+  "num_downloaded": -1,
+  "num_leeches": -1,
+  "num_peers": -1,
+  "num_seeds": -1,
+  "status": 4,
+  "tier": 5,
+  "url": "wss://tracker6.example/announce"
+ },
+ {
+  "msg": "unsupported URL protocol",
+  "num_downloaded": -1,
+  "num_leeches": -1,
+  "num_peers": -1,
+  "num_seeds": -1,
+  "status": 4,
+  "tier": 6,
+  "url": "wss://tracker7.example/announce"
+ },
+ {
+  "msg": "unsupported URL protocol",
+  "num_downloaded": -1,
+  "num_leeches": -1,
+  "num_peers": -1,
+  "num_seeds": -1,
+  "status": 4,
+  "tier": 7,
+  "url": "wss://tracker8.example/announce"
+ }
+]

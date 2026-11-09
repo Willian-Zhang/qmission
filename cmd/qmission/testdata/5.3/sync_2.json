@@ -1,0 +1,17 @@
+{
+ "rid": 3,
+ "server_state": {
+  "alltime_dl": 890954801064,
+  "alltime_ul": 186186624530,
+  "average_time_queue": 41511
+ },
+ "torrents": {
+  "0000000000000000000000000000000000000002": {
+   "availability": 0.3970000147819519,
+   "pieces_have": 19937,
+   "popularity": 0.012806204521156822,
+   "progress": 0.4011029899120331,
+   "time_active": 2866040
+  }
+ }
+}

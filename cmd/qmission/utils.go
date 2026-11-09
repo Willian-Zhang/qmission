@@ -1,12 +1,16 @@
 package main
 
 import (
-	"io/ioutil"
+	"fmt"
+	"io"
 	"net/http"
+	"time"
 )
 
 type JsonMap map[string]interface{}
 
+// Check panics on an error. Only for tests and startup code; RPC handlers
+// return errors instead.
 func Check(e error) {
 	if e != nil {
 		panic(e)
@@ -22,18 +26,27 @@ func Any(vs []string, dst string) bool {
 	return false
 }
 
-func DoGetWithCookies(path string, cookies *string) []byte {
+// DoGetWithCookies downloads a .torrent file for torrent-add.
+func DoGetWithCookies(path string, cookies *string) ([]byte, error) {
 	httpReq, err := http.NewRequest("GET", path, nil)
-	Check(err)
-	if cookies != nil {
-		header := http.Header{}
-		header.Add("Cookie", *cookies)
-		httpReq.Header = header
+	if err != nil {
+		return nil, fmt.Errorf("torrent-add: invalid URL: %w", err)
 	}
-	cl := &http.Client{}
+	if cookies != nil {
+		httpReq.Header.Add("Cookie", *cookies)
+	}
+	cl := &http.Client{Timeout: 60 * time.Second}
 	resp, err := cl.Do(httpReq)
-	Check(err)
+	if err != nil {
+		return nil, fmt.Errorf("torrent-add: downloading the torrent: %w", err)
+	}
 	defer resp.Body.Close()
-	data, err := ioutil.ReadAll(resp.Body)
-	return data
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("torrent-add: downloading the torrent: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxRequestBody))
+	if err != nil {
+		return nil, fmt.Errorf("torrent-add: downloading the torrent: %w", err)
+	}
+	return data, nil
 }

@@ -66,6 +66,7 @@ func TestTorrentListing(t *testing.T) {
 		Post("/api/v2/auth/login").
 		Reply(200).
 		SetHeader("Set-Cookie", "SID=1")
+	setUpVersionMocks(apiAddr, "2.2", "v4.1.5")
 
 	// 1
 	setUpMocks(apiAddr, "cf7da7ab4d4e6125567bd979994f13bb1f23dddd", "1")
@@ -82,7 +83,7 @@ func TestTorrentListing(t *testing.T) {
 	defer server.CloseClientConnections()
 	serverAddr := server.Listener.Addr().(*net.TCPAddr)
 
-	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), "", "",
+	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), testBridgeUser, testBridgePass,
 		&transmissionrpc.AdvancedConfig{Port: uint16(serverAddr.Port)})
 	Check(err)
 	torrents, err := transmissionbt.TorrentGetAll()
@@ -127,6 +128,7 @@ func TestSyncing(t *testing.T) {
 		Post("/api/v2/auth/login").
 		Reply(200).
 		SetHeader("Set-Cookie", "SID=1")
+	setUpVersionMocks(apiAddr, "2.2", "v4.1.5")
 
 	setUpSyncEndpoint(apiAddr)
 
@@ -148,7 +150,7 @@ func TestSyncing(t *testing.T) {
 	defer server.CloseClientConnections()
 	serverAddr := server.Listener.Addr().(*net.TCPAddr)
 
-	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), "", "",
+	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), testBridgeUser, testBridgePass,
 		&transmissionrpc.AdvancedConfig{Port: uint16(serverAddr.Port)})
 	Check(err)
 	torrents, err := transmissionbt.TorrentGetAll()
@@ -211,6 +213,7 @@ func TestSyncingRecentlyActive(t *testing.T) {
 		Post("/api/v2/auth/login").
 		Reply(200).
 		SetHeader("Set-Cookie", "SID=1")
+	setUpVersionMocks(apiAddr, "2.2", "v4.1.5")
 
 	setUpSyncEndpoint(apiAddr)
 
@@ -232,7 +235,7 @@ func TestSyncingRecentlyActive(t *testing.T) {
 	defer server.CloseClientConnections()
 	serverAddr := server.Listener.Addr().(*net.TCPAddr)
 
-	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), "", "",
+	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), testBridgeUser, testBridgePass,
 		&transmissionrpc.AdvancedConfig{Port: uint16(serverAddr.Port)})
 	Check(err)
 
@@ -276,6 +279,7 @@ func TestSyncingRecentlyActiveLong(t *testing.T) {
 		Post("/api/v2/auth/login").
 		Reply(200).
 		SetHeader("Set-Cookie", "SID=1")
+	setUpVersionMocks(apiAddr, "2.2", "v4.1.5")
 
 	setUpSyncEndpoint(apiAddr)
 
@@ -297,7 +301,7 @@ func TestSyncingRecentlyActiveLong(t *testing.T) {
 	defer server.CloseClientConnections()
 	serverAddr := server.Listener.Addr().(*net.TCPAddr)
 
-	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), "", "",
+	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), testBridgeUser, testBridgePass,
 		&transmissionrpc.AdvancedConfig{Port: uint16(serverAddr.Port)})
 	Check(err)
 
@@ -340,6 +344,7 @@ func TestTorrentAdd(t *testing.T) {
 		Post("/api/v2/auth/login").
 		Reply(200).
 		SetHeader("Set-Cookie", "SID=1")
+	setUpVersionMocks(apiAddr, "2.2", "v4.1.5")
 
 	setUpSyncEndpoint(apiAddr)
 
@@ -361,7 +366,7 @@ func TestTorrentAdd(t *testing.T) {
 	defer server.CloseClientConnections()
 	serverAddr := server.Listener.Addr().(*net.TCPAddr)
 
-	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), "", "",
+	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), testBridgeUser, testBridgePass,
 		&transmissionrpc.AdvancedConfig{Port: uint16(serverAddr.Port)})
 	Check(err)
 
@@ -422,6 +427,7 @@ func TestTorrentMove(t *testing.T) {
 		Post("/api/v2/auth/login").
 		Reply(200).
 		SetHeader("Set-Cookie", "SID=1")
+	setUpVersionMocks(apiAddr, "2.2", "v4.1.5")
 
 	gock.New(apiAddr).
 		Get("/api/v2/torrents/info").
@@ -437,7 +443,7 @@ func TestTorrentMove(t *testing.T) {
 	defer server.CloseClientConnections()
 	serverAddr := server.Listener.Addr().(*net.TCPAddr)
 
-	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), "", "",
+	transmissionbt, err := transmissionrpc.New(serverAddr.IP.String(), testBridgeUser, testBridgePass,
 		&transmissionrpc.AdvancedConfig{Port: uint16(serverAddr.Port)})
 	Check(err)
 
@@ -468,6 +474,19 @@ func TestTorrentMove(t *testing.T) {
 	if gock.IsPending() {
 		t.Fail()
 	}
+}
+
+// setUpVersionMocks answers the version probe that follows the (single) login.
+// The 2019 testdata is from the qBT 4.1 era (WebAPI 2.x < 2.11: pause/resume).
+func setUpVersionMocks(apiAddr, webapiVersion, appVersion string) {
+	gock.New(apiAddr).
+		Get("/api/v2/app/webapiVersion").
+		Reply(200).
+		BodyString(webapiVersion)
+	gock.New(apiAddr).
+		Get("/api/v2/app/version").
+		Reply(200).
+		BodyString(appVersion)
 }
 
 func setUpSyncEndpoint(apiAddr string) {

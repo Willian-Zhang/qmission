@@ -1,0 +1,42 @@
+[
+ {
+  "msg": "",
+  "num_downloaded": 0,
+  "num_leeches": 0,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 2,
+  "tier": -1,
+  "url": "** [DHT] **"
+ },
+ {
+  "msg": "",
+  "num_downloaded": 0,
+  "num_leeches": 0,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 2,
+  "tier": -1,
+  "url": "** [PeX] **"
+ },
+ {
+  "msg": "",
+  "num_downloaded": 0,
+  "num_leeches": 0,
+  "num_peers": 0,
+  "num_seeds": 0,
+  "status": 2,
+  "tier": -1,
+  "url": "** [LSD] **"
+ },
+ {
+  "msg": "",
+  "num_downloaded": -1,
+  "num_leeches": -1,
+  "num_peers": -1,
+  "num_seeds": -1,
+  "status": 1,
+  "tier": 0,
+  "url": "http://tracker9.example/announce"
+ }
+]

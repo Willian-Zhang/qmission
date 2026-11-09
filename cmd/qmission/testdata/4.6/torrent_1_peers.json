@@ -1,0 +1,43 @@
+{
+ "full_update": true,
+ "peers": {
+  "10.99.0.102:47169": {
+   "client": "",
+   "connection": "μTP",
+   "country": "China",
+   "country_code": "cn",
+   "dl_speed": 0,
+   "downloaded": 0,
+   "files": "",
+   "flags": "H P",
+   "flags_desc": "H = Peer from DHT\nP = μTP",
+   "ip": "10.99.0.102",
+   "peer_id_client": "",
+   "port": 47169,
+   "progress": 0,
+   "relevance": 0,
+   "up_speed": 0,
+   "uploaded": 0
+  },
+  "10.99.0.103:6882": {
+   "client": "Client 22",
+   "connection": "μTP",
+   "country": "Lithuania",
+   "country_code": "lt",
+   "dl_speed": 0,
+   "downloaded": 0,
+   "files": "",
+   "flags": "U H X P",
+   "flags_desc": "U = Interested (peer) and unchoked (local)\nH = Peer from DHT\nX = Peer from PEX\nP = μTP",
+   "ip": "10.99.0.103",
+   "peer_id_client": "-XX0000-",
+   "port": 6882,
+   "progress": 0.26241135597229004,
+   "relevance": 0,
+   "up_speed": 99,
+   "uploaded": 114688
+  }
+ },
+ "rid": 1,
+ "show_flags": true
+}
