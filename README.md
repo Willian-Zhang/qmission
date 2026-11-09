@@ -30,17 +30,29 @@ The [example stack](examples/compose.yaml) runs qBittorrent and qmission togethe
 services:
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
-    ports: ["8080:8080", "6881:6881", "6881:6881/udp"]
-    volumes: ["./config:/config", "./downloads:/downloads"]
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
     restart: unless-stopped
 
   qmission:
     build: ..
     command: ["-r", "http://qbittorrent:8080/"]
-    env_file: .env
-    ports: ["9091:9091"]
+    environment:
+      QBT_USER: ${QBT_USER}
+      QBT_PASS: ${QBT_PASS}
+      QMISSION_USER: ${QMISSION_USER}
+      QMISSION_PASS: ${QMISSION_PASS}
+    ports:
+      - "9091:9091"
     restart: unless-stopped
 ```
+
+The `${...}` values come from `.env` next to the file (step 3).
 
 1. Get the code and create the settings file:
 
