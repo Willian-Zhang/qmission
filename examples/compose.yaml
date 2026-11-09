@@ -1,52 +1,13 @@
-# qBittorrent + qmission in one stack.
-#
-#   git clone https://github.com/Willian-Zhang/qmission.git
-#   cd qmission/examples
-#   cp ../.env.example .env      # then fill in the four values
-#   docker compose up -d
-#
-# qBittorrent WebUI:     http://<host>:8080
-# Transmission clients:  http://<host>:9091/transmission/rpc  (QMISSION_USER / QMISSION_PASS)
 services:
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
-    container_name: qbittorrent
-    environment:
-      PUID: 1000
-      PGID: 1000
-      TZ: Etc/UTC
-      WEBUI_PORT: 8080
-      TORRENTING_PORT: 6881
-    volumes:
-      - ./qbittorrent/config:/config
-      - ./downloads:/downloads
-    ports:
-      - "8080:8080"        # qBittorrent WebUI
-      - "6881:6881"        # BitTorrent
-      - "6881:6881/udp"
+    ports: ["8080:8080", "6881:6881", "6881:6881/udp"]
+    volumes: ["./config:/config", "./downloads:/downloads"]
     restart: unless-stopped
 
   qmission:
-    build: ..              # builds the image from this checkout
-    image: qmission:local
-    container_name: qmission
-    # Use qBittorrent's service name and its *internal* WebUI port (see README, "Troubleshooting").
-    command: ["-r", "http://qbittorrent:8080/", "-p", "9091"]
-    environment:
-      TZ: Etc/UTC
-      QBT_USER: ${QBT_USER:?set QBT_USER in .env}
-      QBT_PASS: ${QBT_PASS:?set QBT_PASS in .env}
-      QMISSION_USER: ${QMISSION_USER:?set QMISSION_USER in .env}
-      QMISSION_PASS: ${QMISSION_PASS:?set QMISSION_PASS in .env}
-    ports:
-      - "9091:9091"        # Transmission RPC
-    depends_on:
-      - qbittorrent
-    healthcheck:
-      # 200 while qmission can log in to qBittorrent.
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9091/healthz"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+    build: ..
+    command: ["-r", "http://qbittorrent:8080/"]
+    env_file: .env
+    ports: ["9091:9091"]
     restart: unless-stopped

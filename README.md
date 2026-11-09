@@ -24,7 +24,23 @@ Requirements: qBittorrent **4.1 or newer** (tested on 4.6 and 5.3) with its WebU
 
 ## Quick start (Docker)
 
-The [example stack](examples/compose.yaml) runs qBittorrent and qmission together.
+The [example stack](examples/compose.yaml) runs qBittorrent and qmission together:
+
+```yaml
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    ports: ["8080:8080", "6881:6881", "6881:6881/udp"]
+    volumes: ["./config:/config", "./downloads:/downloads"]
+    restart: unless-stopped
+
+  qmission:
+    build: ..
+    command: ["-r", "http://qbittorrent:8080/"]
+    env_file: .env
+    ports: ["9091:9091"]
+    restart: unless-stopped
+```
 
 1. Get the code and create the settings file:
 
@@ -38,7 +54,7 @@ The [example stack](examples/compose.yaml) runs qBittorrent and qmission togethe
 
    ```sh
    docker compose up -d qbittorrent
-   docker logs qbittorrent   # shows a temporary password for user "admin"
+   docker compose logs qbittorrent   # shows a temporary password for user "admin"
    ```
 
    Open `http://<host>:8080`, log in, and set a permanent password under *Tools → Options → WebUI*.
