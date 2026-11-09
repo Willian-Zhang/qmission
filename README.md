@@ -31,7 +31,6 @@ Some Transmission options have no equivalent in qBittorrent. Changing one gives 
 - [ ] Transmission 4.1's newer JSON-RPC 2.0 protocol
 - [ ] Use the app's own login for qBittorrent (no separate qmission login)
 - [ ] Unwanted files when adding a magnet link (applied once its metadata arrives)
-- [ ] Serve TrguiNG's web interface from qmission
 
 Requirements: qBittorrent **4.1 or newer** (tested on 4.6 and 5.3) with its WebUI turned on.
 
