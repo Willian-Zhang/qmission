@@ -9,8 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Workiva/go-datastructures/bitarray"
-	"github.com/h31/Reflection/qBT"
-	"github.com/h31/Reflection/transmission"
+	"github.com/Willian-Zhang/qmission/qBT"
+	"github.com/Willian-Zhang/qmission/transmission"
 	"github.com/ricochet2200/go-disk-usage/du"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
@@ -40,7 +40,6 @@ func init() {
 	flag.BoolVar(debug, "d", false, "")
 	flag.StringVar(apiAddr, "r", "http://localhost:8080/", "")
 	flag.UintVar(port, "p", 9091, "")
-	flag.Parse()
 }
 
 var deprecatedFields = map[string]struct{}{
@@ -1156,6 +1155,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	flag.Parse()
 	switch {
 	case *debug:
 		log.SetLevel(log.DebugLevel)

@@ -1,9 +1,11 @@
-# Reflection
+# qmission
 
-Reflection allows to use Transmission remote controls with qBittorrent.
+qmission (qBittorrent + Transmission) allows to use Transmission remote controls with qBittorrent.
 It acts as a bridge between Transmission RPC and qBittorrent WebUI API.
 
-Currently Reflection is able to:
+qmission is a fork of [Reflection](https://github.com/h31/Reflection) by Artyom Aleksyuk (MIT).
+
+Currently qmission is able to:
 * Show torrent list
 * Show torrent details (files, trackers, statistics)
 * Start, stop, delete torrents
@@ -14,28 +16,22 @@ Currently Reflection is able to:
 * Show peer table
 
 ## Installation
-### Linux
-```
-# replace amd64 with your architecture: amd64, i386, armv7, arm64
-curl -L https://github.com/h31/Reflection/releases/download/v1.0-rc1/reflection_linux_amd64.gz | gunzip | sudo dd of=/usr/local/bin/reflection
-sudo chmod +x /usr/local/bin/reflection
-curl -L https://raw.githubusercontent.com/h31/Reflection/v1.0-rc1/reflection.service | sudo dd of=/etc/systemd/system/reflection.service
-sudo systemctl start reflection.service
-sudo systemctl enable reflection.service
-```
-### MacOS
-Untested
-```
-curl -L https://github.com/h31/Reflection/releases/download/v1.0-rc1/reflection_macos_amd64.gz | gunzip | sudo dd of=/usr/local/bin/reflection
-sudo chmod +x /usr/local/bin/reflection
-```
-### Windows
-[64 bit .zip](https://github.com/h31/Reflection/releases/download/v1.0-rc1/reflection_windows_64.zip)
 
-[32 bit .zip](https://github.com/h31/Reflection/releases/download/v1.0-rc1/reflection_windows_32.zip)
+Requires Go 1.23+.
+
+```
+go install github.com/Willian-Zhang/qmission/cmd/qmission@latest
+```
+
+On Linux, to run it as a systemd service, copy the binary to `/usr/local/bin/qmission` and install [qmission.service](qmission.service):
+
+```
+sudo cp qmission.service /etc/systemd/system/
+sudo systemctl enable --now qmission.service
+```
 
 ## Compatibility
-* Reflection emulates the latest version of Transmission (2.94)
+* qmission emulates the latest version of Transmission (2.94)
 * Requires at least qBittorrent 4.1.0.
 * Tested against Transmission Remote GUI, built-in Transmission Web UI, Torrnado client for Android, Transmission-Qt and Transmission Remote by Yury Polek. Please fill an issue if you experience an incompatibility with any client.
 
@@ -47,7 +43,7 @@ What features are not supported yet:
 
 Please note that both qBittorrent and Transmission have some unique features.
 For example, some torrent properties such as a private flag are not exposed by qBittorrent.
-In case Transmission clients request such information, Reflection responds with predefined template data. Template values are stored in [transmission/templates.go](https://github.com/h31/Reflection/blob/master/transmission/templates.go).
+In case Transmission clients request such information, qmission responds with predefined template data. Template values are stored in [transmission/templates.go](transmission/templates.go).
 
 To enable some qBittorrent-specific options, use a "Specify torrent location" command in your Transmission GUI
 and append a special flag to the path. You can also specify such paths when adding a new torrent.
@@ -59,22 +55,19 @@ For example, if download directory is `/home/user/`, those paths can be used:
 It is possible to combine several commands, i.e. `/home/user/+sf`. Use `-` sign instead of `+` to disable an option.
 If your want to disable command processing and treat a path just as a path, end it with `/`, i.e. `/home/user/my+path+s/`.
 
-Reflection applies some optimizations to make things smoother:
+qmission applies some optimizations to make things smoother:
 * Both qBittorent and Transmission have an ability to transmit not the whole torrents list but just the recently changed information.
-They do it in a slightly different way, but Reflection tries to compensate differences.
-Use `-sync=false` command line flag to disable this optimization and make Reflection request the whole torrents list each time.
+They do it in a slightly different way, but qmission tries to compensate differences.
+Use `-sync=false` command line flag to disable this optimization and make qmission request the whole torrents list each time.
 * Due to the way the qBittorrent's API was designed, some requests can be quite slow.
-Reflection caches those requests, so things work noticeably faster. Most of the time you won't notice an existence of the cache.
+qmission caches those requests, so things work noticeably faster. Most of the time you won't notice an existence of the cache.
 By default, the cache timeout is set to 15 seconds. Use `-cache-timeout seconds` to tune the timeout. If set to 0, the cache is disabled.
 
 ## Usage:
 
 ```bash
-mkdir Reflection
-cd Reflection/
-export GOPATH=$(pwd)
-go get github.com/h31/Reflection/reflection
-./bin/reflection
+go run ./cmd/qmission    # from a checkout
+go test ./...
 ```
 
 Use a `--help` flag to show settings. Default qBittorrent address is `http://localhost:8080/`.
