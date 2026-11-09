@@ -47,21 +47,26 @@ const maxRequestBody = 64 << 20 // base64 metainfo of big .torrent files
 type rpcHandler func(args json.RawMessage) (JsonMap, error)
 
 // rpcMethods maps Transmission methods to handlers. Methods not listed here
-// (session-set, torrent-start-now, torrent-rename-path, queue-*, group-*, ...)
-// answer errNotImplemented.
+// answer errNotImplemented. Feature files may add or override entries from
+// their own init() (see registerRPC), so parallel work doesn't collide here.
 var rpcMethods = map[string]rpcHandler{
-	"session-get":          SessionGet,
-	"session-stats":        SessionStats,
-	"free-space":           FreeSpace,
-	"torrent-get":          TorrentGet,
-	"torrent-stop":         TorrentStop,
-	"torrent-start":        TorrentStart,
-	"torrent-verify":       TorrentRecheck,
-	"torrent-reannounce":   TorrentReannounce,
-	"torrent-remove":       TorrentDelete,
-	"torrent-add":          TorrentAdd,
-	"torrent-set":          TorrentSet,
-	"torrent-set-location": TorrentSetLocation,
+	"session-get":        SessionGet,
+	"session-stats":      SessionStats,
+	"free-space":         FreeSpace,
+	"torrent-get":        TorrentGet,
+	"torrent-stop":       TorrentStop,
+	"torrent-start":      TorrentStart,
+	"torrent-verify":     TorrentRecheck,
+	"torrent-reannounce": TorrentReannounce,
+	"torrent-remove":     TorrentDelete,
+	"torrent-add":        TorrentAdd,
+	// torrent-set, torrent-set-location, torrent-rename-path, torrent-start-now,
+	// queue-move-*, session-set and the stubs register themselves in init().
+}
+
+// registerRPC adds or replaces a method handler; call it from init().
+func registerRPC(method string, h rpcHandler) {
+	rpcMethods[method] = h
 }
 
 func credentialsMatch(user, pass string) bool {

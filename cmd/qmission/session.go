@@ -72,23 +72,24 @@ func serverState() (qBT.ServerState, error) {
 	return state, nil
 }
 
-func SessionGet(args json.RawMessage) (JsonMap, error) {
-	var req struct {
-		Fields []string `json:"fields"`
-	}
-	if err := json.Unmarshal(args, &req); err != nil {
-		return nil, fmt.Errorf("session-get: invalid arguments: %w", err)
-	}
-
-	prefs, err := qBTConn.GetPreferences()
+// readSession reads fresh preferences and server state and maps them to every
+// session-get field. session-set diffs its request against the same map. The
+// raw preference keys tell which preferences this qBT version has.
+func readSession() (JsonMap, map[string]json.RawMessage, error) {
+	prefs, keys, err := qBTConn.GetPreferencesWithKeys()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	state, err := serverState()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	return mapSession(prefs, state), keys, nil
+}
 
+// mapSession is the session-get mapping: qBT preferences and server state in
+// Transmission terms, with templates for what qBT doesn't have.
+func mapSession(prefs qBT.Preferences, state qBT.ServerState) JsonMap {
 	session := make(JsonMap, len(transmission.SessionGetBase)+8)
 	for key, value := range transmission.SessionGetBase {
 		session[key] = value
@@ -138,7 +139,10 @@ func SessionGet(args json.RawMessage) (JsonMap, error) {
 	session["queue-stalled-enabled"] = prefs.Dont_count_slow_torrents
 	session["queue-stalled-minutes"] = prefs.Slow_torrent_inactive_timer / 60
 
-	session["seedRatioLimit"] = prefs.Max_ratio
+	// qBT stores no ratio while the limit is off (max_ratio -1); report 0 then.
+	if prefs.Max_ratio_enabled && prefs.Max_ratio >= 0 {
+		session["seedRatioLimit"] = prefs.Max_ratio
+	}
 	session["seedRatioLimited"] = prefs.Max_ratio_enabled
 	session["idle-seeding-limit-enabled"] = prefs.Max_inactive_seeding_time_enabled
 	if prefs.Max_inactive_seeding_time > 0 {
@@ -151,6 +155,20 @@ func SessionGet(args json.RawMessage) (JsonMap, error) {
 	session["script-torrent-added-filename"] = prefs.Autorun_on_torrent_added_program
 	if prefs.Add_trackers_enabled {
 		session["default-trackers"] = prefs.Add_trackers
+	}
+	return session
+}
+
+func SessionGet(args json.RawMessage) (JsonMap, error) {
+	var req struct {
+		Fields []string `json:"fields"`
+	}
+	if err := json.Unmarshal(args, &req); err != nil {
+		return nil, fmt.Errorf("session-get: invalid arguments: %w", err)
+	}
+	session, _, err := readSession()
+	if err != nil {
+		return nil, err
 	}
 
 	if len(req.Fields) == 0 {

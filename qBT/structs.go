@@ -139,6 +139,12 @@ type TorrentInfo struct {
 	// Minutes; -2 global, -1 unlimited. "" when qBT doesn't send it (older than 4.6).
 	// json.Number so an absent key is distinguishable from 0 and copies stay independent.
 	Inactive_seeding_time_limit json.Number
+
+	// Used by torrent-set (torrents/setShareLimits needs every limit at once).
+	// Minutes; -2 global, -1 unlimited. "" when absent (qBT < 4.2): 0 would mean "stop now".
+	Seeding_time_limit json.Number
+	Share_limit_action string //	WebAPI >= 2.12: Default, Stop, Remove, RemoveWithContent, EnableSuperSeeding
+	Share_limits_mode  string //	WebAPI >= 2.15.3: Default, MatchAny, MatchAll
 }
 
 type PeerInfo struct {

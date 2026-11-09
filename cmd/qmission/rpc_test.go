@@ -91,20 +91,23 @@ func TestAuthAndSessionID(t *testing.T) {
 
 func TestUnimplementedMethods(t *testing.T) {
 	c := setUpSynthetic(t)
-	for _, method := range []string{
-		"session-set", "torrent-start-now", "torrent-rename-path",
-		"queue-move-top", "queue-move-up", "queue-move-down", "queue-move-bottom", "port-test",
-		"blocklist-update", "group-get", "group-set", "session-close", "no-such-method",
-	} {
+	for _, method := range []string{"session-close", "no-such-method"} {
 		out := c.call(method, map[string]interface{}{"ids": []int{1}})
 		if out["result"] != errNotImplemented.Error() {
 			t.Errorf("%s: result = %v", method, out["result"])
 		}
 	}
-	// torrent-set with anything but files-wanted/unwanted fails instead of faking success.
-	out := c.call("torrent-set", map[string]interface{}{"ids": []int{1}, "labels": []string{"x"}})
-	if out["result"] != errNotImplemented.Error() {
-		t.Errorf("torrent-set labels: result = %v", out["result"])
+	// Every method TrguiNG calls has a handler.
+	for _, method := range []string{
+		"session-get", "session-set", "session-stats", "free-space", "port-test", "blocklist-update",
+		"group-get", "group-set", "torrent-get", "torrent-set", "torrent-add", "torrent-remove",
+		"torrent-start", "torrent-start-now", "torrent-stop", "torrent-verify", "torrent-reannounce",
+		"torrent-set-location", "torrent-rename-path",
+		"queue-move-top", "queue-move-up", "queue-move-down", "queue-move-bottom",
+	} {
+		if _, ok := rpcMethods[method]; !ok {
+			t.Errorf("%s: no handler registered", method)
+		}
 	}
 }
 

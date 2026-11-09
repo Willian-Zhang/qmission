@@ -7,10 +7,9 @@ import (
 	"fmt"
 
 	"net/http"
-	"net/url"
+
 	"os"
 
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -161,97 +160,6 @@ func (s escapedString) MarshalJSON() ([]byte, error) {
 
 func EscapeString(in string) escapedString {
 	return escapedString(in)
-}
-
-// TorrentSet supports only files-wanted / files-unwanted so far; any other
-// key fails the request (stage 2 implements the diff rule from plan.md).
-func TorrentSet(args json.RawMessage) (JsonMap, error) {
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(args, &keys); err != nil {
-		return nil, fmt.Errorf("invalid arguments: %w", err)
-	}
-	for key := range keys {
-		if key != "ids" && key != "files-wanted" && key != "files-unwanted" {
-			log.WithField("field", key).Warn("torrent-set: field not supported yet")
-			return nil, errNotImplemented
-		}
-	}
-
-	var req struct {
-		Ids            *json.RawMessage
-		Files_wanted   *[]int `json:"files-wanted"`
-		Files_unwanted *[]int `json:"files-unwanted"`
-	}
-	if err := json.Unmarshal(args, &req); err != nil {
-		return nil, fmt.Errorf("invalid arguments: %w", err)
-	}
-	if req.Files_wanted == nil && req.Files_unwanted == nil {
-		return JsonMap{}, nil
-	}
-
-	sel, err := parseIDsField(req.Ids)
-	if err != nil {
-		return nil, err
-	}
-	if len(sel.torrents) != 1 {
-		return nil, errors.New("torrent-set: files-wanted/files-unwanted need exactly one torrent")
-	}
-	torrent := sel.torrents[0]
-
-	newFilesPriorities := make(map[int]int)
-	if req.Files_wanted != nil {
-		for _, fileId := range *req.Files_wanted {
-			newFilesPriorities[fileId] = 1 // qBT Normal
-		}
-	}
-	if req.Files_unwanted != nil {
-		for _, fileId := range *req.Files_unwanted {
-			newFilesPriorities[fileId] = 0 // Do not download
-		}
-	}
-	for fileId, priority := range newFilesPriorities {
-		params := url.Values{
-			"hash":     {string(torrent.Hash)},
-			"id":       {strconv.Itoa(fileId)},
-			"priority": {strconv.Itoa(priority)},
-		}
-		if _, err := qBTConn.PostForm("torrents/filePrio", params); err != nil {
-			return nil, err
-		}
-	}
-	return JsonMap{}, nil
-}
-
-func TorrentSetLocation(args json.RawMessage) (JsonMap, error) {
-	var req struct {
-		Ids      *json.RawMessage
-		Location *string     `json:"location"`
-		Move     interface{} `json:"move"`
-	}
-	if err := json.Unmarshal(args, &req); err != nil {
-		return nil, fmt.Errorf("invalid arguments: %w", err)
-	}
-	if req.Location == nil {
-		return nil, errors.New("torrent-set-location: no location given")
-	}
-
-	sel, err := parseIDsField(req.Ids)
-	if err != nil {
-		return nil, err
-	}
-	torrents := sel.torrents
-	if len(torrents) == 0 {
-		return JsonMap{}, nil
-	}
-
-	params := url.Values{
-		"hashes":   {torrents.ConcatenateHashes()},
-		"location": {*req.Location},
-	}
-	if _, err := qBTConn.PostForm("torrents/setLocation", params); err != nil {
-		return nil, err
-	}
-	return JsonMap{}, nil
 }
 
 // config is the startup configuration taken from flags and the environment.
