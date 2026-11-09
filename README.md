@@ -10,15 +10,28 @@ TrguiNG / other Transmission app  ──Transmission RPC──▶  qmission  ─
 
 qmission is a fork of [Reflection](https://github.com/h31/Reflection) by Artyom Aleksyuk (MIT).
 
-## What works
+## Features
 
-- Torrent list, filters, details (files, peers, trackers, pieces), statistics
-- Add torrents (magnet, .torrent file, URL) with folder, labels, sequential download and file selection
-- Start, stop, force start, verify, reannounce, remove, queue, move, rename
-- Edit torrent properties (speed and seeding limits, labels, trackers, file priorities)
-- Server settings (speed limits, alternative speed and its schedule, queue, network)
+- [x] Torrent list with filters, search and live updates
+- [x] Details: files, peers, trackers, pieces, server statistics
+- [x] Add torrents: magnet link, .torrent file, URL, with download folder, labels, sequential download and file selection
+- [x] Start, stop, force start, verify, reannounce, remove (with or without data)
+- [x] Queue, move, rename (torrents, files and folders)
+- [x] Torrent properties: speed and seeding limits, labels, trackers, file priorities
+- [x] Server settings: speed limits, alternative speed and its schedule, queue, network
+- [x] qBittorrent 4.x and 5.x, detected automatically
+- [x] Docker image (amd64, arm64)
 
 Some Transmission options have no equivalent in qBittorrent. Changing one gives a clear error and changes nothing. Per-app details: [docs/compatibility](docs/compatibility/README.md).
+
+## Roadmap
+
+- [ ] Prebuilt Docker image and release binaries
+- [ ] Test and document more apps: Transmission Web UI, Transmission Remote GUI, Transdroid, Sonarr/Radarr, ... ([docs/compatibility](docs/compatibility/README.md))
+- [ ] Transmission 4.1's newer JSON-RPC 2.0 protocol
+- [ ] Use the app's own login for qBittorrent (no separate qmission login)
+- [ ] Unwanted files when adding a magnet link (applied once its metadata arrives)
+- [ ] Serve TrguiNG's web interface from qmission
 
 Requirements: qBittorrent **4.1 or newer** (tested on 4.6 and 5.3) with its WebUI turned on.
 
