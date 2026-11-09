@@ -280,6 +280,11 @@ def do_trackers(body, _h):
     for t in body:
         if isinstance(t.get("url"), str):
             t["url"] = M.tracker(t["url"])
+        # 5.x per-interface endpoints are named "<local ip>:<listen port>".
+        for e in t.get("endpoints") or []:
+            if isinstance(e, dict) and isinstance(e.get("name"), str):
+                addr, _, _port = e["name"].rpartition(":")
+                e["name"] = "%s:%d" % (M.ip(addr.strip("[]")), FAKE_PORTS["listen_port"])
     return body
 
 
@@ -328,7 +333,14 @@ PREF_SECRET = re.compile(
 )
 
 
+# The machine's real ports, replaced with fixed defaults.
+FAKE_PORTS = {"listen_port": 6881, "web_ui_port": 8080, "ssl_listen_port": 6882}
+
+
 def do_preferences(body, _h):
+    for k, port in FAKE_PORTS.items():
+        if isinstance(body.get(k), int) and body[k] != 0:
+            body[k] = port
     for k, v in list(body.items()):
         if isinstance(v, str):
             if PREF_SECRET.search(k) or "/" in v or "@" in v or "://" in v:
