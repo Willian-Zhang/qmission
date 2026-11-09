@@ -16,7 +16,8 @@ services:
     restart: unless-stopped
 
   qmission:
-    build: ..             # builds from this checkout
+    image: ghcr.io/willian-zhang/qmission:latest
+    # build: ..          # or build from this checkout instead
     # qBittorrent's service name and its port inside the container
     # (a remapped host port fails qBittorrent's Host header check).
     command: ["-r", "http://qbittorrent:8080/"]

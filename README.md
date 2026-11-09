@@ -20,13 +20,13 @@ qmission is a fork of [Reflection](https://github.com/h31/Reflection) by Artyom 
 - [x] Torrent properties: speed and seeding limits, labels, trackers, file priorities
 - [x] Server settings: speed limits, alternative speed and its schedule, queue, network
 - [x] qBittorrent 4.x and 5.x, detected automatically
-- [x] Docker image (amd64, arm64)
+- [x] Docker image (`ghcr.io/willian-zhang/qmission`, amd64 and arm64) and [release binaries](https://github.com/Willian-Zhang/qmission/releases)
 
 Some Transmission options have no equivalent in qBittorrent. Changing one gives a clear error and changes nothing. Per-app details: [docs/compatibility](docs/compatibility/README.md).
 
 ## Roadmap
 
-- [ ] Prebuilt Docker image and release binaries
+
 - [ ] Test and document more apps: Transmission Web UI, Transmission Remote GUI, Transdroid, Sonarr/Radarr, ... ([docs/compatibility](docs/compatibility/README.md))
 - [ ] Transmission 4.1's newer JSON-RPC 2.0 protocol
 - [ ] Use the app's own login for qBittorrent (no separate qmission login)
@@ -57,7 +57,8 @@ services:
     restart: unless-stopped
 
   qmission:
-    build: ..             # builds from this checkout
+    image: ghcr.io/willian-zhang/qmission:latest
+    # build: ..          # or build from this checkout instead
     # qBittorrent's service name and its port inside the container
     # (a remapped host port fails qBittorrent's Host header check).
     command: ["-r", "http://qbittorrent:8080/"]
@@ -79,12 +80,13 @@ services:
 
 The `${...}` values come from `.env` next to the file (step 3).
 
-1. Get the code and create the settings file:
+1. Save the file above as `compose.yaml` in a new folder, and next to it a file `.env` with:
 
    ```sh
-   git clone https://github.com/Willian-Zhang/qmission.git
-   cd qmission/examples
-   cp ../.env.example .env
+   QBT_USER=
+   QBT_PASS=
+   QMISSION_USER=
+   QMISSION_PASS=
    ```
 
 2. Start qBittorrent first and set its WebUI password:
@@ -122,7 +124,7 @@ Already running qBittorrent? Use only the `qmission` service from the example an
 
 ## Without Docker
 
-Requires Go 1.23+.
+Download a binary from the [releases](https://github.com/Willian-Zhang/qmission/releases), or build it with Go 1.23+:
 
 ```sh
 go install github.com/Willian-Zhang/qmission/cmd/qmission@latest
