@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
@@ -54,6 +55,7 @@ type addSource struct {
 	url      string // magnet link or http(s) URL
 	hashes   infoHashes
 	name     string
+	marker   string // URL adds: the one-off tag the torrent is found by
 }
 
 // parseBoolArg reads an optional boolean that some clients send as a number.
@@ -158,6 +160,9 @@ func validateLabels(labels []string) ([]string, error) {
 		if strings.Contains(label, ",") {
 			return nil, fmt.Errorf("torrent-add: label %q contains a comma, which qBittorrent tags can't hold", label)
 		}
+		if isAddMarker(label) {
+			return nil, fmt.Errorf("torrent-add: labels starting with %q are reserved by qmission", addMarkerPrefix)
+		}
 		tags = append(tags, label)
 	}
 	return tags, nil
@@ -213,9 +218,19 @@ func TorrentAdd(args json.RawMessage) (JsonMap, error) {
 			return JsonMap{"torrent-duplicate": addedTorrent(t, src.name)}, nil
 		}
 	}
-	before := map[qBT.Hash]bool{}
-	for _, t := range qBTConn.TorrentsList.Slice() {
-		before[t.Hash] = true
+	// A URL's hash is only known to qBT once it has downloaded the file, so the
+	// torrent is tagged with a one-off marker and found by that.
+	if !src.hashes.known() {
+		marker, err := newAddMarker()
+		if err != nil {
+			return nil, err
+		}
+		src.marker = marker
+		tags = append(tags, marker)
+	}
+	var torrent *qBT.TorrentInfo
+	if src.marker != "" {
+		defer func() { cleanupAddMarker(src.marker, torrent) }()
 	}
 
 	params := qBT.AddParams{
@@ -266,7 +281,7 @@ func TorrentAdd(args json.RawMessage) (JsonMap, error) {
 		return nil, fmt.Errorf("torrent-add: %w", err)
 	}
 
-	torrent, err := waitForNewTorrent(src, res, before)
+	torrent, err = waitForNewTorrent(src, res)
 	if err != nil {
 		return nil, err
 	}
@@ -294,15 +309,15 @@ func addedTorrent(t *qBT.TorrentInfo, fallbackName string) JsonMap {
 }
 
 // waitForNewTorrent polls sync/maindata until the added torrent shows up. A
-// magnet or .torrent is found by its info hash (or the ID qBT >= 5.x reports);
-// a URL, whose hash only qBT learns, by the first hash that wasn't there before.
-func waitForNewTorrent(src addSource, res qBT.AddResult, before map[qBT.Hash]bool) (*qBT.TorrentInfo, error) {
+// magnet or .torrent is found by its info hash (or the ID qBT >= 5.x reports),
+// a URL by its marker tag.
+func waitForNewTorrent(src addSource, res qBT.AddResult) (*qBT.TorrentInfo, error) {
 	deadline := time.Now().Add(addTimeout)
 	for {
 		if err := qBTConn.UpdateTorrentsList(); err != nil {
 			return nil, err
 		}
-		if t := findAdded(src, res, before); t != nil {
+		if t := findAdded(src, res); t != nil {
 			return t, nil
 		}
 		if time.Now().After(deadline) {
@@ -310,32 +325,91 @@ func waitForNewTorrent(src addSource, res qBT.AddResult, before map[qBT.Hash]boo
 		}
 		time.Sleep(addPollInterval)
 	}
-	if src.url != "" && !src.hashes.known() {
-		return nil, fmt.Errorf("torrent-add: qBittorrent accepted the URL, but no new torrent appeared within %s "+
-			"(still downloading, download failed, or already added)", addTimeout)
+	if src.marker != "" {
+		return nil, fmt.Errorf("torrent-add: torrent from URL didn't appear within %s "+
+			"(download failed, or the torrent is already in qBittorrent)", addTimeout)
 	}
 	return nil, fmt.Errorf("torrent-add: qBittorrent accepted the torrent, but it did not appear within %s", addTimeout)
 }
 
-func findAdded(src addSource, res qBT.AddResult, before map[qBT.Hash]bool) *qBT.TorrentInfo {
+func findAdded(src addSource, res qBT.AddResult) *qBT.TorrentInfo {
 	list := &qBTConn.TorrentsList
-	if src.hashes.known() {
-		if t := list.FindByInfoHash(src.hashes.v1, src.hashes.v2); t != nil {
-			return t
+	if src.marker != "" {
+		for _, t := range list.Slice() {
+			if hasTag(t.Tags, src.marker) {
+				return t
+			}
 		}
+		return nil
+	}
+	if t := list.FindByInfoHash(src.hashes.v1, src.hashes.v2); t != nil {
+		return t
 	}
 	for _, id := range res.AddedIDs {
 		if t := list.ByHash(qBT.Hash(strings.ToLower(string(id)))); t != nil {
 			return t
 		}
 	}
-	if src.hashes.known() || len(res.AddedIDs) > 0 {
-		return nil
+	return nil
+}
+
+// addMarkerPrefix starts the one-off tags that mark URL adds. They are hidden
+// from `labels` and deleted after the add, on timeout, and at startup.
+const addMarkerPrefix = "qmission-add-"
+
+func newAddMarker() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("torrent-add: %w", err)
 	}
-	for _, t := range list.Slice() { // ID order: the oldest new torrent first
-		if !before[t.Hash] {
-			return t
+	return addMarkerPrefix + hex.EncodeToString(b), nil
+}
+
+func isAddMarker(tag string) bool { return strings.HasPrefix(tag, addMarkerPrefix) }
+
+// hasTag reports whether qBT's comma-separated tags contain tag.
+func hasTag(tags, tag string) bool {
+	for _, t := range strings.Split(tags, ",") {
+		if strings.TrimSpace(t) == tag {
+			return true
 		}
 	}
-	return nil
+	return false
+}
+
+// cleanupAddMarker takes the marker off the added torrent (if found) and
+// deletes the tag. Failures only log: the add itself went through.
+func cleanupAddMarker(marker string, torrent *qBT.TorrentInfo) {
+	if torrent != nil {
+		if err := qBTConn.RemoveTags([]qBT.Hash{torrent.Hash}, []string{marker}); err != nil {
+			log.WithError(err).Warn("torrent-add: removing the marker tag failed")
+		}
+	}
+	if err := qBTConn.DeleteTags([]string{marker}); err != nil {
+		log.WithError(err).Warn("torrent-add: deleting the marker tag failed")
+	}
+}
+
+// cleanupLeftoverAddMarkers deletes marker tags left by an earlier run (a crash
+// mid-add, or a URL download that finished after the timeout).
+func cleanupLeftoverAddMarkers() {
+	tags, err := qBTConn.GetTags()
+	if err != nil {
+		log.WithError(err).Warn("Listing qBittorrent tags for marker cleanup failed")
+		return
+	}
+	var leftover []string
+	for _, tag := range tags {
+		if isAddMarker(tag) {
+			leftover = append(leftover, tag)
+		}
+	}
+	if len(leftover) == 0 {
+		return
+	}
+	if err := qBTConn.DeleteTags(leftover); err != nil {
+		log.WithError(err).WithField("count", len(leftover)).Warn("Deleting leftover torrent-add marker tags failed")
+		return
+	}
+	log.WithField("count", len(leftover)).Info("Deleted leftover torrent-add marker tags")
 }

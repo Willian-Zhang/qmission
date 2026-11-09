@@ -259,24 +259,169 @@ func TestTorrentAddMagnetBase32(t *testing.T) {
 	})
 }
 
-func TestTorrentAddURL(t *testing.T) {
-	hash := hex.EncodeToString(randomHash(t))
-	var add *captured
+// markerIn returns the qmission-add-* tag of a torrents/add form ("" if none).
+func markerIn(form url.Values) string {
+	for _, tag := range strings.Split(form.Get("tags"), ",") {
+		if strings.HasPrefix(tag, addMarkerPrefix) {
+			return tag
+		}
+	}
+	return ""
+}
+
+// urlAddFixture: after the recorded chain, one delta brings a torrent someone
+// else added at the same time (no marker), the next one the URL's torrent,
+// tagged with the marker the bridge sent (read from the captured add).
+type urlAddFixture struct {
+	add, removeTags, deleteTags *captured
+	other, mine                 string
+}
+
+func setUpURLAdd(t *testing.T, ds *dataset, appear bool, deleteStatus int) *urlAddFixture {
+	f := &urlAddFixture{other: hex.EncodeToString(randomHash(t)), mine: hex.EncodeToString(randomHash(t))}
+	status, body := ds.addReply(t, "", true)
+	f.add = capturePost(t, "/api/v2/torrents/add", status, body)
+	f.removeTags = capturePost(t, "/api/v2/torrents/removeTags", 200, "")
+	f.deleteTags = capturePost(t, "/api/v2/torrents/deleteTags", deleteStatus, "")
+	last := ds.lastRid()
+	gock.New(testQBTAddr).Get("/api/v2/sync/maindata").MatchParam("rid", fmt.Sprintf("^%d$", last)).
+		Reply(200).BodyString(fmt.Sprintf(`{"rid": %d, "torrents": {%q: {"name": "concurrent", "state": "metaDL", "tags": "x"}}}`,
+		last+1, f.other))
+	next := last + 1
+	if appear {
+		rid := next + 1
+		gock.New(testQBTAddr).Get("/api/v2/sync/maindata").MatchParam("rid", fmt.Sprintf("^%d$", next)).
+			Reply(200).Map(func(res *http.Response) *http.Response {
+			marker := ""
+			if forms := f.add.all(); len(forms) > 0 {
+				marker = markerIn(forms[len(forms)-1])
+			}
+			body := fmt.Sprintf(`{"rid": %d, "torrents": {%q: {"name": "from-url", "state": "downloading", "tags": "lbl, %s"}}}`,
+				rid, f.mine, marker)
+			res.Body = io.NopCloser(strings.NewReader(body))
+			res.ContentLength = int64(len(body))
+			return res
+		})
+		next++
+	}
+	gock.New(testQBTAddr).Get("/api/v2/sync/maindata").MatchParam("rid", fmt.Sprintf("^%d$", next)).
+		Persist().Reply(200).BodyString(fmt.Sprintf(`{"rid": %d}`, next))
+	return f
+}
+
+func TestTorrentAddURLMarker(t *testing.T) {
+	var f *urlAddFixture
 	forEachDatasetWith(t, func(t *testing.T, ds *dataset) {
-		status, body := ds.addReply(t, "", true)
-		add = capturePost(t, "/api/v2/torrents/add", status, body)
-		appearsAfterChain(ds, hash, "from-url")
+		f = setUpURLAdd(t, ds, true, 200)
 	}, func(t *testing.T, ds *dataset, c *rpcClient) {
 		link := "https://indexer.invalid/get?id=1"
-		args := c.mustSucceed("torrent-add", map[string]interface{}{"filename": link, "cookies": "k=v"})
-		checkAdded(t, c, args, "torrent-added", hash, "from-url")
-		forms := add.all()
+		args := c.mustSucceed("torrent-add", map[string]interface{}{"filename": link, "cookies": "k=v", "labels": []string{"lbl"}})
+		checkAdded(t, c, args, "torrent-added", f.mine, "from-url")
+
+		forms := f.add.all()
 		if len(forms) != 1 {
 			t.Fatalf("%d torrents/add calls", len(forms))
 		}
+		marker := markerIn(forms[0])
+		if len(marker) != len(addMarkerPrefix)+16 {
+			t.Fatalf("marker %q in tags %q", marker, forms[0].Get("tags"))
+		}
 		// No paused given: qBT's own "add stopped" preference applies.
-		expectForm(t, forms[0], map[string]string{"urls": link, "cookie": "k=v"}, "paused", "stopped", "torrents@file")
+		expectForm(t, forms[0], map[string]string{"urls": link, "cookie": "k=v", "tags": "lbl," + marker},
+			"paused", "stopped", "torrents@file")
+
+		if rm := f.removeTags.all(); len(rm) != 1 || rm[0].Get("hashes") != f.mine || rm[0].Get("tags") != marker {
+			t.Errorf("removeTags calls = %v", rm)
+		}
+		if del := f.deleteTags.all(); len(del) != 1 || del[0].Get("tags") != marker {
+			t.Errorf("deleteTags calls = %v", del)
+		}
+
+		// The table still has the marker (no later delta drops it): labels hide it.
+		out := c.mustSucceed("torrent-get", map[string]interface{}{"fields": []string{"hashString", "labels"}})
+		for _, item := range out["torrents"].([]interface{}) {
+			tor := item.(map[string]interface{})
+			for _, l := range tor["labels"].([]interface{}) {
+				if strings.HasPrefix(l.(string), addMarkerPrefix) {
+					t.Errorf("marker %q in labels", l)
+				}
+			}
+			if tor["hashString"] == f.mine && fmt.Sprint(tor["labels"]) != "[lbl]" {
+				t.Errorf("labels = %v, want [lbl]", tor["labels"])
+			}
+		}
+		// A second marker would be a different tag.
+		if m2, _ := newAddMarker(); m2 == marker {
+			t.Error("markers repeat")
+		}
 	})
+}
+
+func TestTorrentAddURLCleanupFailureStillSucceeds(t *testing.T) {
+	var f *urlAddFixture
+	forEachDatasetWith(t, func(t *testing.T, ds *dataset) {
+		f = setUpURLAdd(t, ds, true, 500)
+	}, func(t *testing.T, ds *dataset, c *rpcClient) {
+		args := c.mustSucceed("torrent-add", map[string]interface{}{"filename": "http://indexer.invalid/a.torrent"})
+		checkAdded(t, c, args, "torrent-added", f.mine, "from-url")
+		if f.deleteTags.count() != 1 {
+			t.Errorf("deleteTags calls = %d", f.deleteTags.count())
+		}
+	})
+}
+
+func TestTorrentAddURLTimeout(t *testing.T) {
+	prev := addTimeout
+	addTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { addTimeout = prev })
+	var f *urlAddFixture
+	forEachDatasetWith(t, func(t *testing.T, ds *dataset) {
+		f = setUpURLAdd(t, ds, false, 200)
+	}, func(t *testing.T, ds *dataset, c *rpcClient) {
+		out := c.call("torrent-add", map[string]interface{}{"filename": "https://indexer.invalid/missing"})
+		if res, _ := out["result"].(string); !strings.Contains(res, "torrent from URL didn't appear") {
+			t.Errorf("result = %v", out["result"])
+		}
+		forms := f.add.all()
+		if len(forms) != 1 {
+			t.Fatalf("%d torrents/add calls", len(forms))
+		}
+		if del := f.deleteTags.all(); len(del) != 1 || del[0].Get("tags") != markerIn(forms[0]) {
+			t.Errorf("deleteTags calls = %v", del)
+		}
+		if n := f.removeTags.count(); n != 0 {
+			t.Errorf("%d removeTags calls; the concurrent torrent must not be taken", n)
+		}
+	})
+}
+
+func TestStartupMarkerCleanup(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tags string
+		want string // deleteTags form, "" = no call
+	}{
+		{"leftovers", `["a", "qmission-add-0011223344556677", "b", "qmission-add-x"]`, "qmission-add-0011223344556677,qmission-add-x"},
+		{"none", `["a", "qmission"]`, ""},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			var del *captured
+			forEachDatasetWith(t, func(t *testing.T, ds *dataset) {
+				gock.New(testQBTAddr).Get("/api/v2/torrents/tags").Reply(200).BodyString(tc.tags)
+				del = capturePost(t, "/api/v2/torrents/deleteTags", 200, "")
+			}, func(t *testing.T, ds *dataset, c *rpcClient) {
+				loginLoop() // returns after the first successful login and the cleanup
+				forms := del.all()
+				switch {
+				case tc.want == "" && len(forms) != 0:
+					t.Errorf("deleteTags calls = %v, want none", forms)
+				case tc.want != "" && (len(forms) != 1 || forms[0].Get("tags") != tc.want):
+					t.Errorf("deleteTags calls = %v, want tags=%s", forms, tc.want)
+				}
+			})
+		})
+	}
 }
 
 func TestTorrentAddMetainfo(t *testing.T) {
@@ -427,6 +572,7 @@ func TestTorrentAddInvalid(t *testing.T) {
 			"bad base64":             {"metainfo": "%%%"},
 			"not a torrent":          {"metainfo": base64.StdEncoding.EncodeToString([]byte("hello"))},
 			"label with comma":       {"filename": "magnet:?xt=urn:btih:" + hash, "labels": []string{"a,b"}},
+			"reserved label":         {"filename": "magnet:?xt=urn:btih:" + hash, "labels": []string{"qmission-add-1"}},
 			"files-unwanted, magnet": {"filename": "magnet:?xt=urn:btih:" + hash, "files-unwanted": []int{0}},
 			"files-unwanted, URL":    {"filename": "https://x.invalid/a.torrent", "files-unwanted": []int{0}},
 			"paused string":          {"filename": "magnet:?xt=urn:btih:" + hash, "paused": "yes"},

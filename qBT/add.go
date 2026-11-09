@@ -128,6 +128,27 @@ func (q *Connection) SetFilePriority(hash Hash, fileIDs []int, priority int) err
 	return err
 }
 
+// GetTags lists every tag qBT knows (torrents/tags, a JSON array).
+func (q *Connection) GetTags() (tags []string, err error) {
+	err = q.getJSON("torrents/tags", nil, &tags)
+	return
+}
+
+// RemoveTags takes tags off torrents (torrents/removeTags); the tags stay defined.
+func (q *Connection) RemoveTags(hashes []Hash, tags []string) error {
+	_, err := q.PostForm("torrents/removeTags", url.Values{
+		"hashes": {joinHashes(hashes)},
+		"tags":   {strings.Join(tags, ",")},
+	})
+	return err
+}
+
+// DeleteTags deletes tags globally (torrents/deleteTags), also from every torrent.
+func (q *Connection) DeleteTags(tags []string) error {
+	_, err := q.PostForm("torrents/deleteTags", url.Values{"tags": {strings.Join(tags, ",")}})
+	return err
+}
+
 // ReannounceTorrents calls torrents/reannounce (trackers; 5.x also DHT).
 func (q *Connection) ReannounceTorrents(hashes []Hash) error {
 	return q.PostWithHashes("torrents/reannounce", hashes)

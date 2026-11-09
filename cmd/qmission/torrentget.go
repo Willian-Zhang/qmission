@@ -118,11 +118,12 @@ func mapDate(t int64) int64 {
 	return t
 }
 
-// parseTags splits qBT's comma-separated tags into Transmission labels.
+// parseTags splits qBT's comma-separated tags into Transmission labels,
+// leaving out torrent-add's temporary marker tags.
 func parseTags(tags string) []string {
 	labels := make([]string, 0)
 	for _, tag := range strings.Split(tags, ",") {
-		if tag = strings.TrimSpace(tag); tag != "" {
+		if tag = strings.TrimSpace(tag); tag != "" && !isAddMarker(tag) {
 			labels = append(labels, tag)
 		}
 	}

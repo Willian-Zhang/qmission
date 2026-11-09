@@ -300,6 +300,7 @@ func loginLoop() {
 		case err == nil:
 			log.WithField("version", qBTConn.AppVersion()).WithField("webapi", qBTConn.APIVersion().String()).
 				Info("Connected to qBittorrent")
+			cleanupLeftoverAddMarkers()
 			return
 		case errors.Is(err, qBT.ErrInvalidCredentials):
 			log.WithError(err).Error("qBittorrent login failed; check QBT_USER/QBT_PASS and qBittorrent's Host-header validation. Not retrying")
