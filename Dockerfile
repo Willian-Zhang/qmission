@@ -13,8 +13,9 @@ RUN go mod download
 COPY . .
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /out/qmission ./cmd/qmission
+    go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/qmission ./cmd/qmission
 
 # alpine rather than distroless/scratch: busybox `wget` for the healthcheck,
 # tzdata so TZ (e.g. Europe/Berlin) works.

@@ -156,6 +156,7 @@ For a systemd service, see the install steps at the top of [qmission.service](qm
 | `-d` | off | debug log, **includes torrent names, paths and hashes**; don't share it |
 | `-sync` | `true` | use qBittorrent's incremental updates (faster) |
 | `-disable-keep-alive` | off | for old qBittorrent versions with connection problems |
+| `-version` | | print the version and exit |
 | `QBT_USER`, `QBT_PASS` | | qBittorrent login (env; `-qbt-user`/`-qbt-pass` also work but show up in `ps`) |
 | `QMISSION_USER`, `QMISSION_PASS` | | login for Transmission apps (env, required) |
 
@@ -185,6 +186,8 @@ go test ./...
 ```
 
 The tests replay recorded, anonymized qBittorrent 4.6 and 5.3 responses ([cmd/qmission/testdata](cmd/qmission/testdata/README.md)). CI ([GitHub Actions](.github/workflows/ci.yml)) builds, vets, tests and builds the multi-arch Docker image.
+
+Releases: push a tag like `v0.1.0`. The [release workflow](.github/workflows/release.yml) tests, pushes the image to `ghcr.io/willian-zhang/qmission`, and publishes binaries for Linux, macOS and Windows. Tags with a `-` (e.g. `v0.1.0-rc1`) become pre-releases.
 
 ## License
 

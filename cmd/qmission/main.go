@@ -225,8 +225,16 @@ func loginLoop() {
 	}
 }
 
+// version is set at build time: -ldflags "-X main.version=v0.1.0".
+var version = "dev"
+
 func main() {
+	showVersion := flag.Bool("version", false, "Print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("qmission", version)
+		return
+	}
 	switch {
 	case *debug:
 		log.SetLevel(log.DebugLevel)
@@ -258,6 +266,6 @@ func main() {
 	go loginLoop()
 
 	addr := fmt.Sprintf(":%d", *port)
-	log.WithField("addr", addr).Info("Listening")
+	log.WithField("addr", addr).WithField("version", version).Info("Listening")
 	log.Fatal(http.ListenAndServe(addr, newMux()))
 }
