@@ -3,7 +3,7 @@
   "availability": -1,
   "index": 0,
   "is_seed": true,
-  "name": "Torrent 1/file 1.srt",
+  "name": "Torrent 1/file 1 café.srt",
   "piece_range": [
    0,
    0
@@ -15,7 +15,7 @@
  {
   "availability": -1,
   "index": 1,
-  "name": "Torrent 1/file 2.srt",
+  "name": "Torrent 1/file 2 café.srt",
   "piece_range": [
    0,
    0
@@ -27,7 +27,7 @@
  {
   "availability": -1,
   "index": 2,
-  "name": "Torrent 1/file 3.srt",
+  "name": "Torrent 1/file 3 café.srt",
   "piece_range": [
    0,
    0
@@ -39,7 +39,7 @@
  {
   "availability": -1,
   "index": 3,
-  "name": "Torrent 1/file 4.srt",
+  "name": "Torrent 1/file 4 café.srt",
   "piece_range": [
    0,
    0
@@ -51,7 +51,7 @@
  {
   "availability": -1,
   "index": 4,
-  "name": "Torrent 1/file 5.srt",
+  "name": "Torrent 1/file 5 café.srt",
   "piece_range": [
    0,
    0
@@ -63,7 +63,7 @@
  {
   "availability": -1,
   "index": 5,
-  "name": "Torrent 1/file 6.mp4",
+  "name": "Torrent 1/file 6 café.mp4",
   "piece_range": [
    0,
    986
@@ -75,7 +75,7 @@
  {
   "availability": -1,
   "index": 6,
-  "name": "Torrent 1/file 7.srt",
+  "name": "Torrent 1/file 7 café.srt",
   "piece_range": [
    986,
    986
@@ -87,7 +87,7 @@
  {
   "availability": -1,
   "index": 7,
-  "name": "Torrent 1/file 8.srt",
+  "name": "Torrent 1/file 8 café.srt",
   "piece_range": [
    986,
    986
@@ -99,7 +99,7 @@
  {
   "availability": -1,
   "index": 8,
-  "name": "Torrent 1/file 9.srt",
+  "name": "Torrent 1/file 9 café.srt",
   "piece_range": [
    986,
    986
@@ -111,7 +111,7 @@
  {
   "availability": -1,
   "index": 9,
-  "name": "Torrent 1/file 10.srt",
+  "name": "Torrent 1/file 10 café.srt",
   "piece_range": [
    986,
    986
@@ -123,7 +123,7 @@
  {
   "availability": -1,
   "index": 10,
-  "name": "Torrent 1/file 11.jpg",
+  "name": "Torrent 1/file 11 café.jpg",
   "piece_range": [
    986,
    986

@@ -11,6 +11,13 @@ of a capture. Numbers, booleans and states are never touched.
 
 Never prints real values: errors report only the record kind and the
 exception type.
+
+    anonymize.py --rename-only <dir>...
+
+rewrites already-anonymized files in place from the old ASCII fake names
+(`Torrent <n>`, `Torrent <n>/file <m>.<ext>`) to the current ones (see
+fake_name/fake_file). Idempotent; touches only strings in the anonymizer's
+own fake-name forms, and reports any other `Torrent <n>` it can't place.
 """
 
 import base64
@@ -25,6 +32,25 @@ HEX64 = re.compile(r"\b[0-9a-fA-F]{64}\b")
 URL = re.compile(r"\b(?:https?|udp|wss?)://[^\s\"'<>]+")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 EXT = re.compile(r"^\.[A-Za-z0-9]{1,5}$")
+
+# Fake names deliberately carry non-ASCII and JSON-special text so tests catch
+# encoding bugs: CJK (BMP, 3-byte UTF-8), an emoji outside the BMP (4-byte
+# UTF-8, UTF-16 surrogate pair), a combining mark (e + U+0301), a precomposed
+# Latin-1 letter (U+00E9, 2-byte UTF-8) and a double quote. Every 4th torrent
+# (n = 1, 5, 9, ...) keeps a plain ASCII name so both kinds are covered.
+NAME_SUFFIX = ' \u4e2d\u6587 \U0001F3AC "cafe\u0301"'
+FILE_SUFFIX = " caf\u00e9"
+
+
+def fake_name(n):
+    return "Torrent %d" % n if n % 4 == 1 else "Torrent %d%s" % (n, NAME_SUFFIX)
+
+
+def fake_file(n, m, ext, nested):
+    """File name inside torrent n; the root folder is the torrent name."""
+    if nested:
+        return "%s/file %d%s%s" % (fake_name(n), m, FILE_SUFFIX, ext)
+    return fake_name(n) + ext
 
 
 class Mapper:
@@ -115,7 +141,7 @@ class Mapper:
 
     # --- names ------------------------------------------------------------
     def name(self, n):
-        return "Torrent %d" % n
+        return fake_name(n)
 
     def file(self, n, real):
         table = self.files.setdefault(n, {})
@@ -125,9 +151,7 @@ class Mapper:
         last = re.split(r"[/\\]", real)[-1]
         ext = os.path.splitext(last)[1]
         ext = ext if EXT.match(ext) else ""
-        if "/" in real or "\\" in real:
-            return "Torrent %d/file %d%s" % (n, m, ext)
-        return "Torrent %d%s" % (n, ext)
+        return fake_file(n, m, ext, "/" in real or "\\" in real)
 
     def content_path(self, n, real, save_real):
         if not real:
@@ -137,14 +161,14 @@ class Mapper:
         parent, last = os.path.split(real.rstrip("/"))
         ext = os.path.splitext(last)[1]
         ext = ext if EXT.match(ext) else ""
-        return "%s/Torrent %d%s" % (self.path(parent).rstrip("/"), n, ext)
+        return "%s/%s%s" % (self.path(parent).rstrip("/"), fake_name(n), ext)
 
     def magnet(self, n, real):
         if not real:
             return real
         q = urllib.parse.parse_qs(real.split("?", 1)[1] if "?" in real else "")
         parts = ["xt=urn:btih:" + format(n, "040x"),
-                 "dn=" + urllib.parse.quote("Torrent %d" % n)]
+                 "dn=" + urllib.parse.quote(fake_name(n), safe="")]
         for tr in q.get("tr", []):
             parts.append("tr=" + urllib.parse.quote(self.tracker(tr), safe=""))
         return "magnet:?" + "&".join(parts)
@@ -330,7 +354,82 @@ KINDS = {
 }
 
 
+# --- --rename-only: old fake names -> current ones --------------------------
+OLD_EXT = r"(\.[A-Za-z0-9]{1,5})?"
+OLD_FILE = re.compile(r"^Torrent (\d+)/file (\d+)%s$" % OLD_EXT)
+OLD_SINGLE = re.compile(r"^Torrent (\d+)%s$" % OLD_EXT)
+OLD_PATH = re.compile(r"^(/downloads(?:/[^/]*)*)/Torrent (\d+)%s$" % OLD_EXT)
+OLD_DN = re.compile(r"([?&]dn=)Torrent%20(\d+)(?=&|$)")
+ANY_NAME = re.compile(r"Torrent( |%20)(\d+)(?!\d)")
+
+
+def count_old_names(s):
+    """`Torrent <n>` occurrences not followed by fake_name(n)'s suffix."""
+    left = 0
+    for m in ANY_NAME.finditer(s):
+        n = int(m.group(2))
+        if n % 4 == 1:
+            continue
+        suffix = NAME_SUFFIX if m.group(1) == " " else urllib.parse.quote(NAME_SUFFIX, safe="")
+        if not s.startswith(suffix, m.end()):
+            left += 1
+    return left
+
+
+def rename_line(s):
+    m = OLD_FILE.match(s)
+    if m:
+        return fake_file(int(m.group(1)), int(m.group(2)), m.group(3) or "", True)
+    m = OLD_SINGLE.match(s)
+    if m:
+        return fake_name(int(m.group(1))) + (m.group(2) or "")
+    m = OLD_PATH.match(s)
+    if m:
+        return "%s/%s%s" % (m.group(1), fake_name(int(m.group(2))), m.group(3) or "")
+    if s.startswith("magnet:?"):
+        return OLD_DN.sub(lambda m: m.group(1) + urllib.parse.quote(fake_name(int(m.group(2))), safe=""), s)
+    return s
+
+
+def rename_value(v, stats):
+    if isinstance(v, dict):
+        return {k: rename_value(x, stats) for k, x in v.items()}
+    if isinstance(v, list):
+        return [rename_value(x, stats) for x in v]
+    if not isinstance(v, str):
+        return v
+    # peers' "files" is a newline-separated list of file names
+    out = "\n".join(rename_line(line) for line in v.split("\n"))
+    if out != v:
+        stats["renamed"] += 1
+    stats["unplaced"] += count_old_names(out)
+    return out
+
+
+def rename_only(dirs):
+    status = 0
+    for d in dirs:
+        for fname in sorted(os.listdir(d)):
+            if not fname.endswith(".json"):
+                continue
+            path = os.path.join(d, fname)
+            with open(path, encoding="utf-8") as f:
+                body = json.load(f)
+            stats = {"renamed": 0, "unplaced": 0}
+            body = rename_value(body, stats)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(body, f, indent=1, ensure_ascii=False)
+                f.write("\n")
+            print("%s: %d strings renamed, %d old names left" % (path, stats["renamed"], stats["unplaced"]),
+                  file=sys.stderr)
+            if stats["unplaced"]:
+                status = 1
+    return status
+
+
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--rename-only":
+        sys.exit(rename_only(sys.argv[2:]))
     outdir = sys.argv[1]
     os.makedirs(outdir, exist_ok=True)
     for line in sys.stdin:
@@ -348,13 +447,13 @@ def main():
         try:
             if kind == "text":
                 text = M.scrub(raw.decode("utf-8"))
-                with open(path, "w") as f:
+                with open(path, "w", encoding="utf-8") as f:
                     f.write(text)
             else:
                 body = json.loads(raw)
                 body = KINDS[kind](body, real_hash if real_hash != "-" else None)
                 body = M.deep_scrub(body)
-                with open(path, "w") as f:
+                with open(path, "w", encoding="utf-8") as f:
                     json.dump(body, f, indent=1, ensure_ascii=False)
                     f.write("\n")
         except Exception as e:  # never echo the payload
