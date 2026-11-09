@@ -27,12 +27,13 @@ Requirements: qBittorrent **4.1 or newer** (tested on 4.6 and 5.3) with its WebU
 The [example stack](examples/compose.yaml) runs qBittorrent and qmission together:
 
 ```yaml
+# qBittorrent + qmission. Fill in .env next to this file first (see the README).
 services:
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
     ports:
-      - "8080:8080"
-      - "6881:6881"
+      - "8080:8080"       # qBittorrent WebUI
+      - "6881:6881"       # BitTorrent
       - "6881:6881/udp"
     volumes:
       - ./config:/config
@@ -40,15 +41,17 @@ services:
     restart: unless-stopped
 
   qmission:
-    build: ..
+    build: ..             # builds from this checkout
+    # qBittorrent's service name and its port inside the container
+    # (a remapped host port fails qBittorrent's Host header check).
     command: ["-r", "http://qbittorrent:8080/"]
     environment:
-      QBT_USER: ${QBT_USER}
+      QBT_USER: ${QBT_USER}             # qBittorrent WebUI login
       QBT_PASS: ${QBT_PASS}
-      QMISSION_USER: ${QMISSION_USER}
+      QMISSION_USER: ${QMISSION_USER}   # login your Transmission app uses (required)
       QMISSION_PASS: ${QMISSION_PASS}
     ports:
-      - "9091:9091"
+      - "9091:9091"       # Transmission RPC: http://<host>:9091/transmission/rpc
     restart: unless-stopped
 ```
 
