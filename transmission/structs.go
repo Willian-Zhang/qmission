@@ -31,13 +31,31 @@ type TorrentAddRequest struct {
 	Priority_normal   *[]JsonMap   //    indices of normal-priority file(s)
 }
 
+// PeerInfo is one torrent-get `peers` entry (rpc-spec.md 4.1.4, old camelCase
+// names). `peer_id`, `bytes_to_client` and `bytes_to_peer` are left out: qBT has
+// no equivalent.
 type PeerInfo struct {
-	RateToPeer   int         `json:"rateToPeer"`
-	RateToClient int         `json:"rateToClient"`
-	Port         int         `json:"port"`
-	ClientName   interface{} `json:"clientName"`
-	FlagStr      string      `json:"flagStr"`
-	Country      interface{} `json:"country"`
-	Address      string      `json:"address"`
-	Progress     float64     `json:"progress"` //	Torrent progress (percentage/100)
+	Address            string      `json:"address"`
+	ClientName         interface{} `json:"clientName"`
+	ClientIsChoked     bool        `json:"clientIsChoked"`
+	ClientIsInterested bool        `json:"clientIsInterested"`
+	FlagStr            string      `json:"flagStr"`
+	IsDownloadingFrom  bool        `json:"isDownloadingFrom"`
+	IsEncrypted        bool        `json:"isEncrypted"`
+	IsIncoming         bool        `json:"isIncoming"`
+	IsUploadingTo      bool        `json:"isUploadingTo"`
+	IsUTP              bool        `json:"isUTP"`
+	PeerIsChoked       bool        `json:"peerIsChoked"`
+	PeerIsInterested   bool        `json:"peerIsInterested"`
+	Port               int         `json:"port"`
+	Progress           float64     `json:"progress"`     // 0..1
+	RateToClient       int         `json:"rateToClient"` // B/s
+	RateToPeer         int         `json:"rateToPeer"`   // B/s
+}
+
+// PeersFromTemplate: torrent-get `peersFrom` with every key the spec lists.
+func PeersFromTemplate() JsonMap {
+	return JsonMap{
+		"fromCache": 0, "fromDht": 0, "fromIncoming": 0, "fromLpd": 0, "fromLtep": 0, "fromPex": 0, "fromTracker": 0,
+	}
 }

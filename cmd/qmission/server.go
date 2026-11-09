@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	runtimedebug "runtime/debug"
 	"strconv"
 	"time"
@@ -46,15 +47,17 @@ const maxRequestBody = 64 << 20 // base64 metainfo of big .torrent files
 type rpcHandler func(args json.RawMessage) (JsonMap, error)
 
 // rpcMethods maps Transmission methods to handlers. Methods not listed here
-// (session-set, torrent-set-location's siblings, queue-*, group-*, ...) answer
-// errNotImplemented.
+// (session-set, torrent-start-now, torrent-rename-path, queue-*, group-*, ...)
+// answer errNotImplemented.
 var rpcMethods = map[string]rpcHandler{
 	"session-get":          SessionGet,
 	"session-stats":        SessionStats,
+	"free-space":           FreeSpace,
 	"torrent-get":          TorrentGet,
 	"torrent-stop":         TorrentStop,
 	"torrent-start":        TorrentStart,
 	"torrent-verify":       TorrentRecheck,
+	"torrent-reannounce":   TorrentReannounce,
 	"torrent-remove":       TorrentDelete,
 	"torrent-add":          TorrentAdd,
 	"torrent-set":          TorrentSet,
@@ -114,8 +117,26 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
 	resp, err := dispatch(req)
 	writeRPCResponse(w, req.Tag, resp, err)
+	logRPCRequest(req.Method, resp, err, time.Since(start))
+}
+
+// logRPCRequest writes one info line per request (shown with -v). It carries
+// only the method, outcome, duration and item count, never torrent data.
+func logRPCRequest(method string, resp JsonMap, err error, took time.Duration) {
+	entry := log.WithFields(log.Fields{
+		"method": method,
+		"ok":     err == nil,
+		"ms":     took.Milliseconds(),
+	})
+	if list, ok := resp["torrents"]; ok {
+		if v := reflect.ValueOf(list); v.Kind() == reflect.Slice {
+			entry = entry.WithField("torrents", v.Len())
+		}
+	}
+	entry.Info("RPC")
 }
 
 // dispatch runs one RPC method. A panic anywhere below is logged and turned

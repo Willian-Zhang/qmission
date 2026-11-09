@@ -27,10 +27,8 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # TODO: widen to ./... once the bare bencode struct tags in
-      # cmd/qmission/metainfo.go are fixed (stage 1b).
       - name: Vet
-        run: go vet ./qBT ./transmission
+        run: go vet ./...
 
       - name: Test
         run: go test -race ./...

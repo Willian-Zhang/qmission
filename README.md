@@ -8,8 +8,8 @@ qmission is a fork of [Reflection](https://github.com/h31/Reflection) by Artyom 
 Currently qmission is able to:
 * Show torrent list
 * Show torrent details (files, trackers, statistics)
-* Start, stop, delete torrents
-* Add new torrents from a file, a magnet link of an HTTP/HTTPS link
+* Start, stop, verify, reannounce and remove torrents
+* Add new torrents from a .torrent file, a magnet link (hex or base32) or an HTTP/HTTPS link, with labels, sequential download and unwanted files
 * Choose which files should be downloaded
 * Change destination directory
 * Show peer table
@@ -61,7 +61,7 @@ Edit the `-r` qBittorrent URL, the network and the IP address to match your setu
 * Requires at least qBittorrent 4.1.0. Tested on 4.6.x and 5.3.x; the qBittorrent version is detected at login, so 4.x (`pause`/`resume`) and 5.x (`stop`/`start`) both work.
 
 Stage 1a caveats (read-only use plus list polling):
-* Methods and writes that aren't implemented yet (`session-set`, `torrent-set` except `files-wanted`/`files-unwanted`, `torrent-start-now`, `torrent-reannounce`, `torrent-rename-path`, `queue-*`, `free-space`, `port-test`, `blocklist-update`, `group-*`) fail with `not implemented in qmission yet` instead of pretending to succeed.
+* Methods and writes that aren't implemented yet (`session-set`, `torrent-set` except `files-wanted`/`files-unwanted`, `torrent-start-now`, `torrent-rename-path`, `queue-*`, `port-test`, `blocklist-update`, `group-*`) fail with `not implemented in qmission yet` instead of pretending to succeed.
 * Torrent IDs start at 1 and are stable only while qmission runs; they're reassigned after a restart.
 * Speeds and limits are in KiB/s (`units.speed-bytes` 1024). qBittorrent's `0` (unlimited) shows as a disabled limit.
 * List polls are served from qBittorrent's torrent list without per-torrent requests. `trackerStats` there holds one entry for qBittorrent's current tracker (with the swarm's seed/peer counts); the real tracker list comes with a single-torrent request (the details pane). `pieceCount`, `pieceSize`, `dateCreated`, `isPrivate` and `file-count` are read once per torrent and cached; `pieceCount` is 0 while qBittorrent is still fetching a magnet's metadata. Fields that need `torrents/properties` (`corruptEver`, `peer-limit`, `comment`, ...) are only filled for single-torrent requests.
@@ -69,6 +69,15 @@ Stage 1a caveats (read-only use plus list polling):
 * `download-dir-free-space` is the free space of qBittorrent's default save path.
 * A torrent in qBittorrent's `error`/`missingFiles` state shows as stopped with a local error; qBittorrent's API gives no error text.
 * Tested against Transmission Remote GUI, built-in Transmission Web UI, Torrnado client for Android, Transmission-Qt and Transmission Remote by Yury Polek. Please fill an issue if you experience an incompatibility with any client.
+
+Stage 1b caveats (adding torrents and actions):
+* `torrent-add` waits up to 10 s for the new torrent to show up in qBittorrent, then answers `torrent-added` with its ID; if it doesn't show up in time, the request fails (the torrent may still appear later). A torrent qBittorrent already has is answered with `torrent-duplicate`, without adding it again.
+* `torrent-add` with an HTTP/HTTPS `filename`: qBittorrent downloads the file, so qmission doesn't know the hash in advance and takes the first new torrent that appears. A URL that turns out to be a duplicate, or fails to download, ends in the timeout error. qBittorrent 5.x ignores `cookies`. A `filename` that is a local path isn't supported; send the file as `metainfo`.
+* `labels` become qBittorrent tags (created if missing); a label can't contain a comma.
+* `files-unwanted` only works with `metainfo` (a magnet link or URL has no file list yet), and fails the request otherwise. Such torrents are added stopped and started once the files are deselected, so nothing of them is downloaded. `files-wanted`, `priority-*`, `peer-limit` and `bandwidthPriority` are ignored on add.
+* Path flags (`+s`/`+f`/`+h` at the end of a path) have been removed; paths are used as given. Sequential download is the `sequential_download` option, which also turns on first/last-piece priority (like Transmission's sequential mode). Skip-hash-check isn't reachable from Transmission clients.
+* `free-space` and `download-dir-free-space` always report the free space of qBittorrent's default save path, whatever path is asked (`total_size` is -1, unknown). With `-sync=false`, `free-space` reports -1.
+* `torrent-remove` with `delete-local-data` deletes the files (qBittorrent `deleteFiles`). `torrent-reannounce` asks the trackers again (qBittorrent 5.x also DHT).
 
 What features are not supported yet:
 * Setting torrent properties (download/upload speed, etc)
@@ -80,15 +89,6 @@ Please note that both qBittorrent and Transmission have some unique features.
 For example, some torrent properties such as a private flag are not exposed by qBittorrent.
 In case Transmission clients request such information, qmission responds with predefined template data. Template values are stored in [transmission/templates.go](transmission/templates.go).
 
-To enable some qBittorrent-specific options, use a "Specify torrent location" command in your Transmission GUI
-and append a special flag to the path. You can also specify such paths when adding a new torrent.
-For example, if download directory is `/home/user/`, those paths can be used:
-* `/home/user/+s` to enable sequential download
-* `/home/user/+f` to download first and last pieces first 
-* `/home/user/+h` to skip hash checking when adding torrent.
-
-It is possible to combine several commands, i.e. `/home/user/+sf`. Use `-` sign instead of `+` to disable an option.
-If your want to disable command processing and treat a path just as a path, end it with `/`, i.e. `/home/user/my+path+s/`.
 
 qmission applies some optimizations to make things smoother:
 * Both qBittorent and Transmission have an ability to transmit not the whole torrents list but just the recently changed information.

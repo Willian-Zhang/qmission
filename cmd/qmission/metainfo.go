@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
+	"crypto/sha256"
 	"fmt"
 	"github.com/jackpal/bencode-go"
 	"io"
@@ -12,34 +13,36 @@ import (
 // Structs into which torrent metafile is
 // parsed and stored into.
 type FileDict struct {
-	Length int64    "length"
-	Path   []string "path"
-	Md5sum string   "md5sum"
+	Length int64    `bencode:"length"`
+	Path   []string `bencode:"path"`
+	Md5sum string   `bencode:"md5sum"`
 }
 
 type InfoDict struct {
-	FileDuration []int64 "file-duration"
-	FileMedia    []int64 "file-media"
+	FileDuration []int64 `bencode:"file-duration"`
+	FileMedia    []int64 `bencode:"file-media"`
 	// Single file
-	Name   string "name"
-	Length int64  "length"
-	Md5sum string "md5sum"
+	Name   string `bencode:"name"`
+	Length int64  `bencode:"length"`
+	Md5sum string `bencode:"md5sum"`
 	// Multiple files
-	Files       []FileDict "files"
-	PieceLength int64      "piece length"
-	Pieces      string     "pieces"
-	Private     int64      "private"
+	Files       []FileDict `bencode:"files"`
+	PieceLength int64      `bencode:"piece length"`
+	Pieces      string     `bencode:"pieces"`
+	Private     int64      `bencode:"private"`
+	MetaVersion int64      `bencode:"meta version"` // 2 for v2 and hybrid torrents (BEP 52)
 }
 
 type MetaInfo struct {
-	Info         InfoDict   "info"
-	InfoHash     string     "info hash"
-	Announce     string     "announce"
-	AnnounceList [][]string "announce-list"
-	CreationDate int64      "creation date"
-	Comment      string     "comment"
-	CreatedBy    string     "created by"
-	Encoding     string     "encoding"
+	Info         InfoDict   `bencode:"info"`
+	InfoHash     string     `bencode:"info hash"`    // raw SHA-1 of the info dict (v1 info hash)
+	InfoHashV2   string     `bencode:"info hash v2"` // raw SHA-256 of the info dict, only for meta version 2
+	Announce     string     `bencode:"announce"`
+	AnnounceList [][]string `bencode:"announce-list"`
+	CreationDate int64      `bencode:"creation date"`
+	Comment      string     `bencode:"comment"`
+	CreatedBy    string     `bencode:"created by"`
+	Encoding     string     `bencode:"encoding"`
 }
 
 // Open .torrent file, un-bencode it and load them into MetaInfo struct.
@@ -57,23 +60,32 @@ func (metaInfo *MetaInfo) ReadTorrentMetaInfoFile(src io.Reader) bool {
 	}
 
 	// Enumerate through child maps.
-	var bytesBuf bytes.Buffer
 	for mapKey, mapVal := range metaInfoMap {
 		switch mapKey {
 		case "info":
+			// The info hash is taken over the re-encoded info dict. bencode-go
+			// writes dict keys sorted, so this equals the original bytes for
+			// any canonical (BEP 3) .torrent.
+			var bytesBuf bytes.Buffer
 			if er = bencode.Marshal(&bytesBuf, mapVal); er != nil {
 				return false
 			}
 
-			infoHash := sha1.New()
-			infoHash.Write(bytesBuf.Bytes())
-			metaInfo.InfoHash = string(infoHash.Sum(nil))
+			infoHash := sha1.Sum(bytesBuf.Bytes())
+			metaInfo.InfoHash = string(infoHash[:])
+			if info, ok := mapVal.(map[string]interface{}); ok {
+				if version, _ := info["meta version"].(int64); version == 2 {
+					infoHashV2 := sha256.Sum256(bytesBuf.Bytes())
+					metaInfo.InfoHashV2 = string(infoHashV2[:])
+				}
+			}
 
 			if er = bencode.Unmarshal(&bytesBuf, &metaInfo.Info); er != nil {
 				return false
 			}
 
 		case "announce-list":
+			var bytesBuf bytes.Buffer
 			if er = bencode.Marshal(&bytesBuf, mapVal); er != nil {
 				return false
 			}
@@ -82,23 +94,23 @@ func (metaInfo *MetaInfo) ReadTorrentMetaInfoFile(src io.Reader) bool {
 			}
 
 		case "announce":
-			metaInfo.Announce = mapVal.(string)
+			metaInfo.Announce, _ = mapVal.(string)
 
 		case "creation date":
-			metaInfo.CreationDate = mapVal.(int64)
+			metaInfo.CreationDate, _ = mapVal.(int64)
 
 		case "comment":
-			metaInfo.Comment = mapVal.(string)
+			metaInfo.Comment, _ = mapVal.(string)
 
 		case "created by":
-			metaInfo.CreatedBy = mapVal.(string)
+			metaInfo.CreatedBy, _ = mapVal.(string)
 
 		case "encoding":
-			metaInfo.Encoding = mapVal.(string)
+			metaInfo.Encoding, _ = mapVal.(string)
 		}
 	}
 
-	return true
+	return metaInfo.InfoHash != ""
 }
 
 // Print torrent meta info struct data.
@@ -138,8 +150,22 @@ func (metaInfo *MetaInfo) DumpTorrentMetaInfo() {
 func (metaInfo *MetaInfo) getPiecesList() []string {
 	var piecesList []string
 	piecesLen := len(metaInfo.Info.Pieces)
-	for i, j := 0, 0; i < piecesLen; i, j = i+20, j+1 {
-		piecesList = append(piecesList, metaInfo.Info.Pieces[i:i+19])
+	for i := 0; i+20 <= piecesLen; i += 20 {
+		piecesList = append(piecesList, metaInfo.Info.Pieces[i:i+20])
 	}
 	return piecesList
+}
+
+// ParseMetainfo returns the hex v1 info hash, the hex v2 info hash ("" unless
+// the torrent is v2 or hybrid) and the name of a .torrent.
+func ParseMetainfo(metainfo []byte) (v1, v2, name string, err error) {
+	var parsed MetaInfo
+	if !parsed.ReadTorrentMetaInfoFile(bytes.NewReader(metainfo)) {
+		return "", "", "", fmt.Errorf("invalid torrent metainfo")
+	}
+	v1 = fmt.Sprintf("%x", parsed.InfoHash)
+	if parsed.InfoHashV2 != "" {
+		v2 = fmt.Sprintf("%x", parsed.InfoHashV2)
+	}
+	return v1, v2, parsed.Info.Name, nil
 }

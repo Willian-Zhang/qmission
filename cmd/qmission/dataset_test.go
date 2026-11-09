@@ -381,6 +381,7 @@ func checkListTorrent(t *testing.T, ds *dataset, fields []string, got, raw map[s
 		metaPct = 0
 	}
 	want := map[string]interface{}{
+		"name":                    raw["name"], // non-ASCII fake names catch JSON escaping bugs
 		"status":                  float64(status),
 		"error":                   errCode,
 		"pieceCount":              wantPieces,

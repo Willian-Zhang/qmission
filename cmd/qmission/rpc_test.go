@@ -92,7 +92,7 @@ func TestAuthAndSessionID(t *testing.T) {
 func TestUnimplementedMethods(t *testing.T) {
 	c := setUpSynthetic(t)
 	for _, method := range []string{
-		"session-set", "torrent-start-now", "torrent-reannounce", "torrent-rename-path", "free-space",
+		"session-set", "torrent-start-now", "torrent-rename-path",
 		"queue-move-top", "queue-move-up", "queue-move-down", "queue-move-bottom", "port-test",
 		"blocklist-update", "group-get", "group-set", "session-close", "no-such-method",
 	} {

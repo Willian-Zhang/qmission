@@ -133,7 +133,12 @@ type TorrentInfo struct {
 	Tracker        string  //	First working tracker, "" if none
 	Trackers_count int     //	Number of trackers (WebAPI >= 2.8)
 	Magnet_uri     string
-	Private        bool //	5.x only, null without metadata
+	Private        bool   //	5.x only, null without metadata
+	Infohash_v1    string //	SHA-1 info hash, "" for v2-only torrents (qBT >= 4.4)
+	Infohash_v2    string //	SHA-256 info hash (64 hex), "" for v1-only torrents (qBT >= 4.4)
+	// Minutes; -2 global, -1 unlimited. "" when qBT doesn't send it (older than 4.6).
+	// json.Number so an absent key is distinguishable from 0 and copies stay independent.
+	Inactive_seeding_time_limit json.Number
 }
 
 type PeerInfo struct {
@@ -147,6 +152,7 @@ type PeerInfo struct {
 	Flags      string
 	IP         string
 	Progress   float64 //	Torrent progress (percentage/100)
+	I2p_dest   string  //	I2P destination instead of IP/port (qBT 5.x with I2P)
 }
 
 type PropertiesGeneral struct {
@@ -196,6 +202,8 @@ type PropertiesTrackers struct {
 	Num_seeds      int // -1 = unknown
 	Num_leeches    int
 	Num_downloaded int
+	Updating       bool  // 5.x: announce in progress (4.x uses status 3 instead)
+	Next_announce  int64 // 5.x: Unix time of the next announce
 }
 
 type PropertiesFiles struct {
@@ -204,6 +212,8 @@ type PropertiesFiles struct {
 	Progress float64 //	File progress (percentage/100)
 	Priority int     //	File priority. See possible values here below
 	Is_seed  bool    //	True if file is seeding/complete
+	// [first, last] piece index, last inclusive (qBT 4.x and 5.x; absent in old releases)
+	Piece_range []int
 }
 
 type TransferInfo struct {

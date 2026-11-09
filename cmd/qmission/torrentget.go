@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/Willian-Zhang/qmission/qBT"
 	"github.com/Willian-Zhang/qmission/transmission"
-	"github.com/Workiva/go-datastructures/bitarray"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -234,6 +232,19 @@ func MapTorrentList(dst JsonMap, src *qBT.TorrentInfo) {
 	default:
 		dst["seedRatioMode"], dst["seedRatioLimit"] = 1, src.Ratio_limit
 	}
+	// Transmission's idle limit (minutes of seeding inactivity) is qBT's
+	// inactive_seeding_time_limit (qBT >= 4.6), not seeding_time_limit (total
+	// seeding time, no Transmission equivalent). Absent: template (global).
+	if idle, err := src.Inactive_seeding_time_limit.Int64(); err == nil {
+		switch {
+		case idle == -2: // TR_IDLELIMIT_GLOBAL
+			dst["seedIdleMode"], dst["seedIdleLimit"] = 0, 0
+		case idle < 0: // TR_IDLELIMIT_UNLIMITED
+			dst["seedIdleMode"], dst["seedIdleLimit"] = 2, 0
+		default: // TR_IDLELIMIT_SINGLE
+			dst["seedIdleMode"], dst["seedIdleLimit"] = 1, idle
+		}
+	}
 	dst["secondsSeeding"] = maxInt64(src.Seeding_time, 0)
 	dst["secondsDownloading"] = maxInt64(src.Time_active-src.Seeding_time, 0)
 	if isFetchingMetadata(src.State) {
@@ -329,7 +340,8 @@ func mapSyntheticTrackers(dst JsonMap, src *qBT.TorrentInfo) {
 		// URL doesn't mean it works. hasAnnounced=false keeps TrguiNG's tracker
 		// status blank instead of showing a made-up "Working" or error.
 		stat["announceState"] = 1 // TR_TRACKER_WAITING
-		trackers = append(trackers, JsonMap{"announce": src.Tracker, "id": 0, "scrape": "", "sitename": site, "tier": 0})
+		stat["scrape"] = scrapeURL(src.Tracker)
+		trackers = append(trackers, JsonMap{"announce": src.Tracker, "id": 0, "scrape": stat["scrape"], "sitename": site, "tier": 0})
 	}
 	dst["trackers"] = trackers
 	dst["trackerStats"] = []JsonMap{JsonMap(stat)}
@@ -345,89 +357,6 @@ func trackerTier(tier interface{}) (int, bool) {
 	}
 }
 
-// MapPropsTrackers maps torrents/trackers (single-ID requests) to trackers,
-// trackerStats and trackerList, skipping the DHT/PeX/LSD pseudo-entries.
-func MapPropsTrackers(dst JsonMap, trackers []qBT.PropertiesTrackers) {
-	trackersList := make([]JsonMap, 0, len(trackers))
-	stats := make([]JsonMap, 0, len(trackers))
-	var tiers [][]string
-	tierIndex := map[int]int{}
-	id := 0
-	for _, tr := range trackers {
-		if strings.HasPrefix(tr.Url, "** [") {
-			continue
-		}
-		tier, _ := trackerTier(tr.Tier)
-		host, site := trackerHost(tr.Url)
-		trackersList = append(trackersList, JsonMap{
-			"announce": tr.Url, "id": id, "scrape": "", "sitename": site, "tier": tier,
-		})
-
-		stat := transmission.TrackerStatsTemplate()
-		stat["announce"] = tr.Url
-		stat["host"] = host
-		stat["sitename"] = site
-		stat["id"] = id
-		stat["tier"] = tier
-		stat["seederCount"] = tr.Num_seeds
-		stat["leecherCount"] = tr.Num_leeches
-		stat["downloadCount"] = tr.Num_downloaded
-		stat["lastAnnouncePeerCount"] = maxInt64(int64(tr.Num_peers), 0)
-		// qBT tracker status: 0 disabled, 1 not contacted, 2 working, 3 updating,
-		// 4 not working; 5.x adds 5 tracker error, 6 unreachable.
-		switch tr.Status {
-		case 0:
-			stat["announceState"] = 0 // TR_TRACKER_INACTIVE
-		case 1:
-			stat["announceState"] = 1 // TR_TRACKER_WAITING
-		case 2:
-			stat["announceState"] = 1
-			stat["hasAnnounced"] = true
-			stat["lastAnnounceSucceeded"] = true
-			stat["lastAnnounceResult"] = "Success"
-		case 3:
-			stat["announceState"] = 3 // TR_TRACKER_ACTIVE
-		default:
-			stat["announceState"] = 1
-			stat["hasAnnounced"] = true
-			stat["lastAnnounceSucceeded"] = false
-			if tr.Msg != "" {
-				stat["lastAnnounceResult"] = tr.Msg
-			} else {
-				stat["lastAnnounceResult"] = "Tracker is not working"
-			}
-		}
-		stats = append(stats, JsonMap(stat))
-
-		idx, ok := tierIndex[tier]
-		if !ok {
-			idx = len(tiers)
-			tierIndex[tier] = idx
-			tiers = append(tiers, nil)
-		}
-		tiers[idx] = append(tiers[idx], tr.Url)
-		id++
-	}
-	tierStrings := make([]string, len(tiers))
-	for i, urls := range tiers {
-		tierStrings[i] = strings.Join(urls, "\n")
-	}
-	dst["trackers"] = trackersList
-	dst["trackerStats"] = stats
-	dst["trackerList"] = strings.Join(tierStrings, "\n\n")
-}
-
-func MapPieceStates(dst JsonMap, pieces []byte) {
-	bits := bitarray.NewSparseBitArray()
-	for i, value := range pieces {
-		if value == 2 {
-			bits.SetBit(uint64(i))
-		}
-	}
-	serialized, _ := bitarray.Marshal(bits) // TODO(stage 1b): drops the header (h31 PR #6)
-	dst["pieces"] = base64.StdEncoding.EncodeToString(serialized)
-}
-
 // MapPropsGeneral maps torrents/properties for single-ID requests.
 // haveValid, limits and counters stay from the list mapping (maindata is fresher).
 func MapPropsGeneral(dst JsonMap, propGeneral qBT.PropertiesGeneral) {
@@ -438,70 +367,8 @@ func MapPropsGeneral(dst JsonMap, propGeneral qBT.PropertiesGeneral) {
 	dst["comment"] = EscapeString(propGeneral.Comment)
 	dst["isPrivate"] = propGeneral.Is_private
 	dst["corruptEver"] = propGeneral.Total_wasted
-	dst["peersFrom"] = JsonMap{
-		"fromCache": 0, "fromDht": 0, "fromIncoming": 0, "fromLpd": 0, "fromLtep": 0, "fromPex": 0,
-		"fromTracker": propGeneral.Peers,
-	}
 	dst["maxConnectedPeers"] = propGeneral.Nb_connections_limit
 	dst["peer-limit"] = propGeneral.Nb_connections_limit
-}
-
-func MapPropsPeers(dst JsonMap, hash qBT.Hash) error {
-	torrents, err := qBTConn.Get("sync/torrentPeers", map[string]string{"hash": string(hash), "rid": "0"})
-	if err != nil {
-		return err
-	}
-	log.Debug(string(torrents))
-	var resp struct {
-		Peers map[string]qBT.PeerInfo
-	}
-	if err := json.Unmarshal(torrents, &resp); err != nil {
-		return fmt.Errorf("qBittorrent sync/torrentPeers: decoding response: %w", err)
-	}
-	trPeers := make([]transmission.PeerInfo, 0, len(resp.Peers))
-	for _, peer := range resp.Peers {
-		trPeers = append(trPeers, transmission.PeerInfo{
-			RateToPeer:   peer.Up_speed,
-			RateToClient: peer.Dl_speed,
-			ClientName:   EscapeString(peer.Client),
-			FlagStr:      peer.Flags,
-			Country:      EscapeString(peer.Country),
-			Address:      peer.IP,
-			Progress:     peer.Progress,
-			Port:         peer.Port,
-		})
-	}
-	dst["peers"] = trPeers
-	return nil
-}
-
-func MapPropsFiles(dst JsonMap, filesInfo []qBT.PropertiesFiles) {
-	fileNum := len(filesInfo)
-	files := make([]JsonMap, fileNum)
-	fileStats := make([]JsonMap, fileNum)
-	priorities := make([]int, fileNum)
-	wanted := make([]int, fileNum)
-	for i, value := range filesInfo {
-		bytesCompleted := int64(float64(value.Size) * value.Progress)
-		files[i] = JsonMap{
-			"bytesCompleted": bytesCompleted,
-			"length":         value.Size,
-			"name":           EscapeString(value.Name),
-		}
-		fileStats[i] = JsonMap{
-			"bytesCompleted": bytesCompleted,
-			"wanted":         value.Priority != 0,
-			"priority":       0, // TODO(stage 1b): Xmister read mapping
-		}
-		if value.Priority != 0 {
-			wanted[i] = 1
-		}
-	}
-	dst["files"] = files
-	dst["fileStats"] = fileStats
-	dst["priorities"] = priorities
-	dst["wanted"] = wanted
-	dst["file-count"] = fileNum
 }
 
 // staticProps are the torrents/properties values that never change once a
@@ -651,6 +518,7 @@ func logFieldOnce(field, msg string) {
 
 type fieldNeeds struct {
 	static, fileCount, props, trackers, files, pieces, peers, queue bool
+	peersFrom, mime, webseeds                                       bool // details only
 }
 
 func classifyFields(fields []string) (n fieldNeeds) {
@@ -658,8 +526,14 @@ func classifyFields(fields []string) (n fieldNeeds) {
 		switch field {
 		case "pieceCount", "pieceSize", "dateCreated", "isPrivate":
 			n.static = true
-		case "comment", "creator", "corruptEver", "peersFrom", "maxConnectedPeers", "peer-limit":
+		case "comment", "creator", "corruptEver", "maxConnectedPeers", "peer-limit":
 			n.props = true
+		case "peersFrom":
+			n.peersFrom = true
+		case "primary-mime-type":
+			n.mime = true
+		case "webseeds":
+			n.webseeds = true
 		case "trackers", "trackerStats", "trackerList":
 			n.trackers = true
 		case "file-count":
@@ -680,8 +554,8 @@ func classifyFields(fields []string) (n fieldNeeds) {
 // TorrentGet answers torrent-get. List polls (no ids, several ids, or
 // recently-active) are served from the torrent list plus the static props cache.
 // A request for exactly one torrent by ID/hash is a details request: it also
-// reads torrents/properties and the real trackers. files/pieces/peers are read
-// whenever they're asked for.
+// reads torrents/properties, the real trackers, peersFrom, primary-mime-type and
+// webseeds (details.go). files/pieces/peers are read whenever they're asked for.
 func TorrentGet(args json.RawMessage) (JsonMap, error) {
 	var req transmission.GetRequest
 	if err := json.Unmarshal(args, &req); err != nil {
@@ -736,44 +610,15 @@ func TorrentGet(args json.RawMessage) (JsonMap, error) {
 			translated["file-count"] = n
 		}
 
-		if details && (needs.props || needs.static) && !isFetchingMetadata(torrentItem.State) {
-			propGeneral, err := qBTConn.GetPropsGeneral(hash)
+		if needs.trackers && !details {
+			mapSyntheticTrackers(translated, torrentItem)
+		}
+		if plan := planDetails(torrentItem, needs, details); plan != (detailPlan{}) {
+			data, err := fetchDetails(torrentItem, plan)
 			if err != nil {
 				return nil, err
 			}
-			storeStaticProps(hash, propGeneral)
-			MapPropsGeneral(translated, propGeneral)
-		}
-		if needs.trackers {
-			if details {
-				trackers, err := qBTConn.GetPropsTrackers(hash)
-				if err != nil {
-					return nil, err
-				}
-				MapPropsTrackers(translated, trackers)
-			} else {
-				mapSyntheticTrackers(translated, torrentItem)
-			}
-		}
-		if needs.pieces {
-			pieces, err := qBTConn.GetPiecesStates(hash)
-			if err != nil {
-				return nil, err
-			}
-			MapPieceStates(translated, pieces)
-		}
-		if needs.files {
-			files, err := qBTConn.GetPropsFiles(hash)
-			if err != nil {
-				return nil, err
-			}
-			storeFileCount(hash, files)
-			MapPropsFiles(translated, files)
-		}
-		if needs.peers {
-			if err := MapPropsPeers(translated, hash); err != nil {
-				return nil, err
-			}
+			applyDetails(translated, torrentItem, plan, data)
 		}
 
 		out := make(JsonMap, len(req.Fields))

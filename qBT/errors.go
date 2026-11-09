@@ -20,6 +20,9 @@ var (
 	ErrForbidden = errors.New("qBittorrent returned 403 Forbidden after re-login")
 	// ErrTorrentNotFound: the hash is not in the torrent table.
 	ErrTorrentNotFound = errors.New("torrent not found")
+	// ErrAddRejected: torrents/add added nothing (WebAPI < 2.14 body "Fails.",
+	// >= 2.14 status 409), e.g. a duplicate or an invalid magnet link.
+	ErrAddRejected = errors.New("qBittorrent did not add the torrent")
 )
 
 // HTTPError is a non-2xx answer from qBT (other than the 403 handled by re-login).

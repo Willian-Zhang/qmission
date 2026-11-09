@@ -1,18 +1,15 @@
 package main
 
 import (
-	"bytes"
-	"crypto/sha1"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"mime/multipart"
+
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
+
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +18,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/Willian-Zhang/qmission/qBT"
-	"github.com/Willian-Zhang/qmission/transmission"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -42,20 +38,6 @@ func init() {
 	flag.BoolVar(debug, "d", false, "")
 	flag.StringVar(apiAddr, "r", "http://localhost:8080/", "")
 	flag.UintVar(port, "p", 9091, "")
-}
-
-type argumentValue int
-
-const (
-	ARGUMENT_NOT_SET argumentValue = iota
-	ARGUMENT_TRUE    argumentValue = iota
-	ARGUMENT_FALSE   argumentValue = iota
-)
-
-type additionalArguments struct {
-	sequentialDownload   argumentValue
-	firstLastPiecesFirst argumentValue
-	skipChecking         argumentValue
 }
 
 var qBTConn qBT.Connection
@@ -181,240 +163,6 @@ func EscapeString(in string) escapedString {
 	return escapedString(in)
 }
 
-func TorrentStop(args json.RawMessage) (JsonMap, error) {
-	torrents, err := parseActionArgument(args)
-	if err != nil {
-		return nil, err
-	}
-	log.WithField("count", len(torrents)).Debug("Stopping torrents")
-	return JsonMap{}, qBTConn.StopTorrents(torrents.Hashes())
-}
-
-func TorrentStart(args json.RawMessage) (JsonMap, error) {
-	torrents, err := parseActionArgument(args)
-	if err != nil {
-		return nil, err
-	}
-	log.WithField("count", len(torrents)).Debug("Starting torrents")
-	return JsonMap{}, qBTConn.StartTorrents(torrents.Hashes())
-}
-
-func TorrentRecheck(args json.RawMessage) (JsonMap, error) {
-	torrents, err := parseActionArgument(args)
-	if err != nil {
-		return nil, err
-	}
-	log.WithField("count", len(torrents)).Debug("Verifying torrents")
-	return JsonMap{}, qBTConn.RecheckTorrents(torrents.Hashes())
-}
-
-func TorrentDelete(args json.RawMessage) (JsonMap, error) {
-	var req struct {
-		Ids             *json.RawMessage
-		DeleteLocalData interface{} `json:"delete-local-data"`
-	}
-	if err := json.Unmarshal(args, &req); err != nil {
-		return nil, fmt.Errorf("invalid arguments: %w", err)
-	}
-	sel, err := parseIDsField(req.Ids)
-	if err != nil {
-		return nil, err
-	}
-	deleteFiles := parseDeleteFilesField(req.DeleteLocalData)
-	log.WithField("count", len(sel.torrents)).WithField("deleteFiles", deleteFiles).Info("Removing torrents")
-	log.WithField("hashes", sel.torrents.ConcatenateHashes()).Debug("Removing torrents")
-	return JsonMap{}, qBTConn.DeleteTorrents(sel.torrents.Hashes(), deleteFiles)
-}
-
-func parseDeleteFilesField(deleteLocalData interface{}) bool {
-	switch val := deleteLocalData.(type) {
-	case bool:
-		return val
-	case float64:
-		return val != 0
-	default:
-		return false // Default value
-	}
-}
-
-func PutMIMEField(mime *multipart.Writer, fieldName string, value string) error {
-	w, err := mime.CreateFormField(fieldName)
-	if err != nil {
-		return err
-	}
-	_, err = w.Write([]byte(value))
-	return err
-}
-
-func AdditionalArgumentToString(value argumentValue) string {
-	switch value {
-	case ARGUMENT_TRUE:
-		return "true"
-	case ARGUMENT_FALSE:
-		return "false"
-	default:
-		return ""
-	}
-}
-
-func UploadTorrent(metainfo []byte, urls *string, req *transmission.TorrentAddRequest, paused bool) error {
-	var buffer bytes.Buffer
-	mime := multipart.NewWriter(&buffer)
-
-	if metainfo != nil {
-		mimeWriter, err := mime.CreateFormFile("torrents", "example.torrent")
-		if err != nil {
-			return err
-		}
-		if _, err := mimeWriter.Write(metainfo); err != nil {
-			return err
-		}
-	}
-
-	fields := [][2]string{}
-	if urls != nil {
-		fields = append(fields, [2]string{"urls", *urls})
-	}
-	if req.Download_dir != nil {
-		extraArgs, strippedLocation, err := parseAdditionalLocationArguments(*req.Download_dir)
-		if err != nil {
-			return err
-		}
-		if extraArgs.sequentialDownload != ARGUMENT_NOT_SET {
-			fields = append(fields, [2]string{"sequentialDownload", AdditionalArgumentToString(extraArgs.sequentialDownload)})
-		}
-		if extraArgs.firstLastPiecesFirst != ARGUMENT_NOT_SET {
-			fields = append(fields, [2]string{"firstLastPiecePrio", AdditionalArgumentToString(extraArgs.firstLastPiecesFirst)})
-		}
-		if extraArgs.skipChecking != ARGUMENT_NOT_SET {
-			fields = append(fields, [2]string{"skip_checking", AdditionalArgumentToString(extraArgs.skipChecking)})
-		}
-		fields = append(fields, [2]string{"savepath", strippedLocation})
-	}
-	fields = append(fields, [2]string{qBTConn.Gates().AddStoppedParam, strconv.FormatBool(paused)})
-	for _, f := range fields {
-		if err := PutMIMEField(mime, f[0], f[1]); err != nil {
-			return err
-		}
-	}
-	if err := mime.Close(); err != nil {
-		return err
-	}
-
-	if _, err := qBTConn.PostMultipart("torrents/add", mime.FormDataContentType(), &buffer); err != nil {
-		return err
-	}
-	log.Debug("Torrent uploaded")
-	return nil
-}
-
-func ParseMagnetLink(link string) (newHash qBT.Hash, newName string, err error) {
-	params, err := url.ParseQuery(strings.TrimPrefix(link, "magnet:?"))
-	if err != nil {
-		return "", "", fmt.Errorf("invalid magnet link: %w", err)
-	}
-	xt := params.Get("xt")
-	if !strings.HasPrefix(xt, "urn:btih:") {
-		return "", "", errors.New("invalid magnet link: no urn:btih info hash")
-	}
-	newHash = qBT.Hash(strings.ToLower(strings.TrimPrefix(xt, "urn:btih:")))
-	newName = params.Get("dn")
-	if newName == "" {
-		newName = "Torrent name"
-	}
-	return newHash, newName, nil
-}
-
-func ParseMetainfo(metainfo []byte) (newHash qBT.Hash, newName string, err error) {
-	var parsedMetaInfo MetaInfo
-	if !parsedMetaInfo.ReadTorrentMetaInfoFile(bytes.NewBuffer(metainfo)) {
-		return "", "", errors.New("invalid torrent metainfo")
-	}
-	log.WithFields(log.Fields{
-		"len":  len(metainfo),
-		"sha1": fmt.Sprintf("%x", sha1.Sum(metainfo)),
-	}).Debug("Decoded metainfo")
-	return qBT.Hash(fmt.Sprintf("%x", parsedMetaInfo.InfoHash)), parsedMetaInfo.Info.Name, nil
-}
-
-func TorrentAdd(args json.RawMessage) (JsonMap, error) {
-	var req transmission.TorrentAddRequest
-	if err := json.Unmarshal(args, &req); err != nil {
-		return nil, fmt.Errorf("invalid arguments: %w", err)
-	}
-	if err := qBTConn.UpdateTorrentsList(); err != nil {
-		return nil, err
-	}
-
-	paused := false
-	if req.Paused != nil {
-		switch value := (*req.Paused).(type) {
-		case float64: // Transmission Remote GUI sends a number
-			paused = value != 0
-		case bool:
-			paused = value
-		}
-	}
-
-	var newHash qBT.Hash
-	var newName string
-	var err error
-	switch {
-	case req.Metainfo != nil:
-		metainfo, decErr := base64.StdEncoding.DecodeString(*req.Metainfo)
-		if decErr != nil {
-			return nil, fmt.Errorf("invalid metainfo: %w", decErr)
-		}
-		if newHash, newName, err = ParseMetainfo(metainfo); err != nil {
-			return nil, err
-		}
-		err = UploadTorrent(metainfo, nil, &req, paused)
-	case req.Filename != nil && strings.HasPrefix(*req.Filename, "magnet:?"):
-		if newHash, newName, err = ParseMagnetLink(*req.Filename); err != nil {
-			return nil, err
-		}
-		err = UploadTorrent(nil, req.Filename, &req, paused)
-	case req.Filename != nil && strings.HasPrefix(*req.Filename, "http"):
-		metainfo, getErr := DoGetWithCookies(*req.Filename, req.Cookies)
-		if getErr != nil {
-			return nil, getErr
-		}
-		if newHash, newName, err = ParseMetainfo(metainfo); err != nil {
-			return nil, err
-		}
-		err = UploadTorrent(metainfo, nil, &req, paused)
-	default:
-		return nil, errors.New("torrent-add: no filename or metainfo given")
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	if torrent := qBTConn.TorrentsList.ByHash(newHash); torrent != nil {
-		return JsonMap{
-			"torrent-duplicate": JsonMap{"id": torrent.Id, "name": newName, "hashString": newHash},
-		}, nil
-	}
-
-	var torrent *qBT.TorrentInfo
-	for retries := 0; retries < 100; retries++ {
-		time.Sleep(50 * time.Millisecond)
-		if err := qBTConn.UpdateTorrentsList(); err != nil {
-			return nil, err
-		}
-		if torrent = qBTConn.TorrentsList.ByHash(newHash); torrent != nil {
-			break
-		}
-	}
-	if torrent == nil {
-		return nil, errors.New("torrent-add: qBittorrent accepted the torrent but it did not show up in time")
-	}
-	log.WithField("id", torrent.Id).Debug("New torrent")
-	return JsonMap{
-		"torrent-added": JsonMap{"id": torrent.Id, "name": newName, "hashString": newHash},
-	}, nil
-}
-
 // TorrentSet supports only files-wanted / files-unwanted so far; any other
 // key fails the request (stage 2 implements the diff rule from plan.md).
 func TorrentSet(args json.RawMessage) (JsonMap, error) {
@@ -474,40 +222,6 @@ func TorrentSet(args json.RawMessage) (JsonMap, error) {
 	return JsonMap{}, nil
 }
 
-var additionalArgumentsRegexp = regexp.MustCompile("([+\\-])([sfh]+)$")
-
-func parseAdditionalLocationArguments(originalLocation string) (args additionalArguments, strippedLocation string, err error) {
-	strippedLocation = additionalArgumentsRegexp.ReplaceAllLiteralString(originalLocation, "")
-	submatches := additionalArgumentsRegexp.FindStringSubmatch(originalLocation)
-	if len(submatches) == 0 {
-		return
-	}
-	for _, c := range submatches[2] {
-		flagValue := ARGUMENT_NOT_SET
-		switch submatches[1] {
-		case "+":
-			flagValue = ARGUMENT_TRUE
-		case "-":
-			flagValue = ARGUMENT_FALSE
-		default:
-			err = errors.New("Unknown value: " + submatches[1])
-			return
-		}
-		switch c {
-		case 's':
-			args.sequentialDownload = flagValue
-		case 'f':
-			args.firstLastPiecesFirst = flagValue
-		case 'h':
-			args.skipChecking = flagValue
-		default:
-			err = errors.New("Unknown value: " + submatches[1])
-			return
-		}
-	}
-	return
-}
-
 func TorrentSetLocation(args json.RawMessage) (JsonMap, error) {
 	var req struct {
 		Ids      *json.RawMessage
@@ -526,29 +240,13 @@ func TorrentSetLocation(args json.RawMessage) (JsonMap, error) {
 		return nil, err
 	}
 	torrents := sel.torrents
-
-	extraArgs, strippedLocation, err := parseAdditionalLocationArguments(*req.Location)
-	if err != nil {
-		return nil, err
-	}
-	if extraArgs.firstLastPiecesFirst != ARGUMENT_NOT_SET {
-		for _, torrent := range torrents {
-			if err := qBTConn.SetFirstLastPieceFirst(torrent.Hash, extraArgs.firstLastPiecesFirst == ARGUMENT_TRUE); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if extraArgs.sequentialDownload != ARGUMENT_NOT_SET {
-		for _, torrent := range torrents {
-			if err := qBTConn.SetSequentialDownload(torrent.Hash, extraArgs.sequentialDownload == ARGUMENT_TRUE); err != nil {
-				return nil, err
-			}
-		}
+	if len(torrents) == 0 {
+		return JsonMap{}, nil
 	}
 
 	params := url.Values{
 		"hashes":   {torrents.ConcatenateHashes()},
-		"location": {strippedLocation},
+		"location": {*req.Location},
 	}
 	if _, err := qBTConn.PostForm("torrents/setLocation", params); err != nil {
 		return nil, err

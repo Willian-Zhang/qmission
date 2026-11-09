@@ -14,40 +14,6 @@ import (
 
 var currentLogLevel = log.DebugLevel
 
-func TestAdditionalLocationArguments(t *testing.T) {
-	tables := []struct {
-		input            string
-		args             additionalArguments
-		strippedLocation string
-		err              error
-	}{
-		{"/home/user", additionalArguments{}, "/home/user", nil},
-		{"/home/user/", additionalArguments{}, "/home/user/", nil},
-		{"/home/user/+s", additionalArguments{sequentialDownload: ARGUMENT_TRUE}, "/home/user/", nil},
-		{"/home/user+s", additionalArguments{sequentialDownload: ARGUMENT_TRUE}, "/home/user", nil},
-		{"/home/user+data", additionalArguments{}, "/home/user+data", nil},
-		{"/home/user+data+s", additionalArguments{sequentialDownload: ARGUMENT_TRUE}, "/home/user+data", nil},
-		{"/home/user+s/", additionalArguments{}, "/home/user+s/", nil},
-		{"/home/user/+f", additionalArguments{firstLastPiecesFirst: ARGUMENT_TRUE}, "/home/user/", nil},
-		{"/home/user/+sf", additionalArguments{sequentialDownload: ARGUMENT_TRUE, firstLastPiecesFirst: ARGUMENT_TRUE},
-			"/home/user/", nil},
-		{"/home/user/+h", additionalArguments{skipChecking: ARGUMENT_TRUE}, "/home/user/", nil},
-		{"/home/user/-s", additionalArguments{sequentialDownload: ARGUMENT_FALSE}, "/home/user/", nil},
-		{"/home/user/-sh", additionalArguments{sequentialDownload: ARGUMENT_FALSE, skipChecking: ARGUMENT_FALSE}, "/home/user/", nil},
-		{"C:\\Users\\+s\\", additionalArguments{}, "C:\\Users\\+s\\", nil},
-		{"C:\\Users\\+s", additionalArguments{sequentialDownload: ARGUMENT_TRUE}, "C:\\Users\\", nil},
-	}
-
-	for _, table := range tables {
-		args, location, err := parseAdditionalLocationArguments(table.input)
-		if args != table.args || location != table.strippedLocation || err != table.err {
-			t.Errorf("Input %s, expected (%+v, %s, %v), got: (%+v, %s, %v)", table.input,
-				table.args, table.strippedLocation, table.err,
-				args, location, err)
-		}
-	}
-}
-
 func TestTorrentListing(t *testing.T) {
 	const apiAddr = "http://localhost:8080"
 	log.SetLevel(currentLogLevel)
@@ -313,11 +279,7 @@ func TestSyncingRecentlyActiveLong(t *testing.T) {
 
 	time.Sleep(qBT.RECENTLY_ACTIVE_TIMEOUT + 5*time.Second)
 
-	gock.New(apiAddr).
-		Post("/api/v2/torrents/resume").
-		MatchType("url").
-		BodyString("^hashes=$").
-		Reply(200)
+	// Nothing recently active: no qBT call at all (there is no mock for one).
 	err = transmissionbt.TorrentStartRecentlyActive()
 	Check(err)
 
@@ -370,18 +332,6 @@ func TestTorrentAdd(t *testing.T) {
 		&transmissionrpc.AdvancedConfig{Port: uint16(serverAddr.Port)})
 	Check(err)
 
-	//urlMatcher := func(req *http.Request, ereq *gock.Request) (bool, error) {
-	//	err := req.ParseMultipartForm(1 << 20) // 1 MB
-	//	Check(err)
-	//
-	//	_, exists := req.MultipartForm.Value["urls"]
-	//
-	//	if !exists {
-	//		return false, errors.New("No URL value")
-	//	}
-	//	return true, nil
-	//}
-
 	gock.New(apiAddr).
 		Post("/api/v2/torrents/add").
 		MatchType("form").
@@ -396,20 +346,15 @@ func TestTorrentAdd(t *testing.T) {
 	if *torrent.Name != "xubuntu-18.04.2-desktop-amd64.iso" {
 		t.Error("Unexpected torrent")
 	}
+	addedID := *torrent.ID
 
-	gock.New(apiAddr).
-		Post("/api/v2/torrents/add").
-		MatchType("form").
-		BodyString("Content-Disposition: form-data; name=\"sequentialDownload\"").
-		Reply(200)
-
+	// The same magnet again is a duplicate, answered without calling torrents/add
+	// (no mock left for it). A trailing "+sf" is just part of the path now.
 	location := "/home/user/+sf"
-
 	torrent, err = transmissionbt.TorrentAdd(&transmissionrpc.TorrentAddPayload{Filename: &magnet, DownloadDir: &location})
 	Check(err)
-
-	if *torrent.Name != "xubuntu-18.04.2-desktop-amd64.iso" {
-		t.Error("Unexpected torrent")
+	if *torrent.ID != addedID || *torrent.HashString != "7a1448be6d15bcde08ee9915350d0725775b73a3" {
+		t.Errorf("duplicate: id %d hash %s, want id %d", *torrent.ID, *torrent.HashString, addedID)
 	}
 }
 
@@ -447,22 +392,11 @@ func TestTorrentMove(t *testing.T) {
 		&transmissionrpc.AdvancedConfig{Port: uint16(serverAddr.Port)})
 	Check(err)
 
-	gock.New(apiAddr).
-		Post("/api/v2/torrents/toggleFirstLastPiecePrio").
-		MatchType("url").
-		BodyString("hashes=842783e3005495d5d1637f5364b59343c7844707").
-		Reply(200)
-
-	gock.New(apiAddr).
-		Post("/api/v2/torrents/toggleSequentialDownload").
-		MatchType("url").
-		BodyString("hashes=842783e3005495d5d1637f5364b59343c7844707").
-		Reply(200)
-
+	// The old +s/+f/+h path flags are gone: the location is passed through as is.
 	gock.New(apiAddr).
 		Post("/api/v2/torrents/setLocation").
 		MatchType("url").
-		BodyString("hashes=842783e3005495d5d1637f5364b59343c7844707&location=%2Fnew%2Fdir").
+		BodyString("^hashes=842783e3005495d5d1637f5364b59343c7844707&location=%2Fnew%2Fdir%2Bsf$").
 		Reply(200)
 
 	err = transmissionbt.TorrentSetLocationHash("842783e3005495d5d1637f5364b59343c7844707", "/new/dir+sf", true)
